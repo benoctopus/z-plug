@@ -52,6 +52,29 @@ pub const Buffer = struct {
         self.channel_data[ch][sample] = value;
     }
 
+    /// Creates a sub-buffer view of a range of samples.
+    /// The sub-buffer is a zero-copy view into the same backing memory.
+    /// 
+    /// `scratch_channels` must be an array with at least `self.channels()` elements.
+    /// The returned `Buffer` uses slices from `scratch_channels` that point into
+    /// the original buffer's memory.
+    ///
+    /// Example:
+    /// ```
+    /// var scratch: [32][]f32 = undefined;
+    /// const sub = buf.subBuffer(&scratch, 10, 20);
+    /// // sub now contains samples [10..30) from buf
+    /// ```
+    pub fn subBuffer(self: Buffer, scratch_channels: [][]f32, offset: usize, len: usize) Buffer {
+        for (self.channel_data, 0..) |ch, i| {
+            scratch_channels[i] = ch[offset..][0..len];
+        }
+        return Buffer{
+            .channel_data = scratch_channels[0..self.channel_data.len],
+            .num_samples = len,
+        };
+    }
+
     // -- Per-sample iteration -------------------------------------------------
 
     /// Returns an iterator that yields one `ChannelSamples` per sample index.
@@ -340,4 +363,30 @@ test "AuxBuffers EMPTY" {
     const aux = AuxBuffers.EMPTY;
     try std.testing.expectEqual(@as(usize, 0), aux.inputs.len);
     try std.testing.expectEqual(@as(usize, 0), aux.outputs.len);
+}
+
+test "Buffer subBuffer zero-copy slicing" {
+    var ch0 = [_]f32{ 1.0, 2.0, 3.0, 4.0, 5.0, 6.0 };
+    var ch1 = [_]f32{ 7.0, 8.0, 9.0, 10.0, 11.0, 12.0 };
+    var channel_data = [_][]f32{ &ch0, &ch1 };
+    const buf = Buffer{
+        .channel_data = &channel_data,
+        .num_samples = 6,
+    };
+
+    var scratch: [32][]f32 = undefined;
+    const sub = buf.subBuffer(&scratch, 2, 3); // samples [2..5)
+    
+    try std.testing.expectEqual(@as(usize, 2), sub.channels());
+    try std.testing.expectEqual(@as(usize, 3), sub.samples());
+    
+    // Verify correct slice
+    try std.testing.expectApproxEqAbs(@as(f32, 3.0), sub.getSample(0, 0), 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 4.0), sub.getSample(0, 1), 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 5.0), sub.getSample(0, 2), 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 9.0), sub.getSample(1, 0), 1e-6);
+    
+    // Verify zero-copy (pointer identity)
+    const sub_ch0 = sub.getChannel(0);
+    try std.testing.expectEqual(@intFromPtr(&ch0[2]), @intFromPtr(&sub_ch0[0]));
 }

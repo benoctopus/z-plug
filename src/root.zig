@@ -33,6 +33,10 @@ pub const IntRange = @import("core/params.zig").IntRange;
 pub const ParamFlags = @import("core/params.zig").ParamFlags;
 pub const ParamValues = @import("core/params.zig").ParamValues;
 pub const idHash = @import("core/params.zig").idHash;
+pub const SmoothingStyle = @import("core/params.zig").SmoothingStyle;
+pub const Smoother = @import("core/params.zig").Smoother;
+pub const SmootherBank = @import("core/params.zig").SmootherBank;
+pub const ParamAccess = @import("core/params.zig").ParamAccess;
 
 // Audio I/O layout and configuration
 pub const AudioIOLayout = @import("core/audio_layout.zig").AudioIOLayout;

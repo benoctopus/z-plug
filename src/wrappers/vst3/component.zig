@@ -32,6 +32,9 @@ pub fn Vst3Component(comptime T: type) type {
         /// Runtime parameter values.
         param_values: core.ParamValues(P.params.len),
         
+        /// Smoother bank for parameter value smoothing.
+        smoother_bank: core.SmootherBank(P.params.len),
+        
         /// Current buffer configuration.
         buffer_config: core.BufferConfig,
         
@@ -50,7 +53,26 @@ pub fn Vst3Component(comptime T: type) type {
         /// Whether the plugin is currently active.
         is_active: bool,
         
+        /// Pre-allocated storage for auxiliary input buffers.
+        /// [bus_index][channel_index][sample_index]
+        aux_input_storage: [max_aux_buses][max_channels][max_buffer_size]f32,
+        
+        /// Pre-allocated Buffer structs for auxiliary inputs.
+        aux_input_buffers: [max_aux_buses]core.Buffer,
+        
+        /// Channel slice arrays for auxiliary input buffers.
+        aux_input_channel_slices: [max_aux_buses][max_channels][]f32,
+        
+        /// Pre-allocated Buffer structs for auxiliary outputs.
+        aux_output_buffers: [max_aux_buses]core.Buffer,
+        
+        /// Channel slice arrays for auxiliary output buffers.
+        aux_output_channel_slices: [max_aux_buses][max_channels][]f32,
+        
         const max_events = 1024;
+        const max_aux_buses = 8;
+        const max_channels = 32;
+        const max_buffer_size = 8192;
         
         /// Create a new component instance.
         pub fn create() !*Self {
@@ -67,6 +89,7 @@ pub fn Vst3Component(comptime T: type) type {
                 .ref_count = std.atomic.Value(u32).init(1),
                 .plugin = undefined,
                 .param_values = core.ParamValues(P.params.len).init(P.params),
+                .smoother_bank = core.SmootherBank(P.params.len).init(P.params),
                 .buffer_config = undefined,
                 .current_layout = P.audio_io_layouts[0],
                 .input_events_storage = undefined,
@@ -75,6 +98,11 @@ pub fn Vst3Component(comptime T: type) type {
                     .events = &[_]core.NoteEvent{},
                 },
                 .is_active = false,
+                .aux_input_storage = undefined,
+                .aux_input_buffers = undefined,
+                .aux_input_channel_slices = undefined,
+                .aux_output_buffers = undefined,
+                .aux_output_channel_slices = undefined,
             };
             
             // Share param_values with controller
@@ -282,6 +310,13 @@ pub fn Vst3Component(comptime T: type) type {
             const wrapper = fromComponent(self);
             
             if (state != 0) {
+                // Initialize all smoothers with current parameter values
+                for (P.params, 0..) |param, i| {
+                    const normalized = wrapper.param_values.get(i);
+                    const plain_value = param.toPlain(normalized);
+                    wrapper.smoother_bank.reset(i, plain_value);
+                }
+                
                 P.reset(&wrapper.plugin);
                 wrapper.is_active = true;
             } else {
@@ -454,7 +489,6 @@ pub fn Vst3Component(comptime T: type) type {
                 }
                 break :blk @as(usize, @intCast(count));
             } else 0;
-            _ = input_count; // TODO: Use for in-place processing check
             
             const output_count = if (data.num_outputs > 0) blk: {
                 const bus = data.outputs[0];
@@ -467,6 +501,19 @@ pub fn Vst3Component(comptime T: type) type {
                 break :blk @as(usize, @intCast(count));
             } else 0;
             
+            // In-place processing: copy input to output if pointers differ
+            const common_channels = @min(input_count, output_count);
+            for (0..common_channels) |i| {
+                if (@intFromPtr(channel_slices_in[i].ptr) != @intFromPtr(channel_slices_out[i].ptr)) {
+                    @memcpy(channel_slices_out[i], channel_slices_in[i]);
+                }
+            }
+            
+            // Zero-fill extra output channels (if output has more channels than input)
+            for (input_count..output_count) |i| {
+                @memset(channel_slices_out[i], 0.0);
+            }
+            
             const output_slices = channel_slices_out[0..output_count];
             
             var buffer = core.Buffer{
@@ -474,13 +521,115 @@ pub fn Vst3Component(comptime T: type) type {
                 .num_samples = @intCast(num_samples),
             };
             
+            // Map auxiliary buffers
+            var aux_input_count: usize = 0;
+            var aux_output_count: usize = 0;
+            
+            // Process auxiliary input buses (index > 0)
+            if (data.num_inputs > 1) {
+                const aux_buses_available = @min(data.num_inputs - 1, max_aux_buses);
+                var bus_idx: i32 = 1;
+                while (bus_idx < data.num_inputs) : (bus_idx += 1) {
+                    if (aux_input_count >= max_aux_buses) break;
+                    
+                    const bus = data.inputs[@intCast(bus_idx)];
+                    const ch_count = @min(bus.num_channels, max_channels);
+                    
+                    if (bus.channel_buffers_32) |buffers| {
+                        // Copy auxiliary input data to owned storage
+                        for (0..@intCast(ch_count)) |ch_idx| {
+                            const src = buffers[ch_idx][0..@intCast(num_samples)];
+                            const dst = wrapper.aux_input_storage[aux_input_count][ch_idx][0..@intCast(num_samples)];
+                            @memcpy(dst, src);
+                            wrapper.aux_input_channel_slices[aux_input_count][ch_idx] = dst;
+                        }
+                        
+                        wrapper.aux_input_buffers[aux_input_count] = core.Buffer{
+                            .channel_data = wrapper.aux_input_channel_slices[aux_input_count][0..@intCast(ch_count)],
+                            .num_samples = @intCast(num_samples),
+                        };
+                        aux_input_count += 1;
+                    }
+                }
+                _ = aux_buses_available;
+            }
+            
+            // Process auxiliary output buses (index > 0)
+            if (data.num_outputs > 1) {
+                const aux_buses_available = @min(data.num_outputs - 1, max_aux_buses);
+                var bus_idx: i32 = 1;
+                while (bus_idx < data.num_outputs) : (bus_idx += 1) {
+                    if (aux_output_count >= max_aux_buses) break;
+                    
+                    const bus = data.outputs[@intCast(bus_idx)];
+                    const ch_count = @min(bus.num_channels, max_channels);
+                    
+                    if (bus.channel_buffers_32) |buffers| {
+                        // Point auxiliary output buffers directly to host output buffers
+                        for (0..@intCast(ch_count)) |ch_idx| {
+                            wrapper.aux_output_channel_slices[aux_output_count][ch_idx] = buffers[ch_idx][0..@intCast(num_samples)];
+                        }
+                        
+                        wrapper.aux_output_buffers[aux_output_count] = core.Buffer{
+                            .channel_data = wrapper.aux_output_channel_slices[aux_output_count][0..@intCast(ch_count)],
+                            .num_samples = @intCast(num_samples),
+                        };
+                        aux_output_count += 1;
+                    }
+                }
+                _ = aux_buses_available;
+            }
+            
             var aux = core.AuxBuffers{
-                .inputs = &[_]core.Buffer{},
-                .outputs = &[_]core.Buffer{},
+                .inputs = wrapper.aux_input_buffers[0..aux_input_count],
+                .outputs = wrapper.aux_output_buffers[0..aux_output_count],
             };
             
             // Translate input events (TODO: implement full event translation)
             const input_event_count: usize = 0;
+            
+            // Process parameter changes from IParameterChanges
+            // TODO: Sample-accurate automation (P.sample_accurate_automation)
+            // When enabled, collect all parameter changes with their sample offsets from
+            // IParameterChanges queues, then split the buffer at change points and call
+            // P.process() for each sub-block.
+            // For now, we apply only the last value from each queue at the start of the block.
+            if (data.input_parameter_changes) |param_changes| {
+                const vtbl: *vst3.param_changes.IParameterChangesVtbl = @ptrCast(@alignCast(param_changes.lpVtbl));
+                const param_count = vtbl.getParameterCount(param_changes);
+                
+                var i: i32 = 0;
+                while (i < param_count) : (i += 1) {
+                    const queue = vtbl.getParameterData(param_changes, i);
+                    if (queue) |q| {
+                        const queue_vtbl: *const vst3.param_changes.IParamValueQueueVtbl = @ptrCast(@alignCast(q.lpVtbl));
+                        const param_id = queue_vtbl.getParameterId(q);
+                        
+                        // Get the last value in the queue (for now, ignore sample offsets)
+                        const point_count = queue_vtbl.getPointCount(q);
+                        if (point_count > 0) {
+                            var sample_offset: i32 = 0;
+                            var value: f64 = 0.0;
+                            if (queue_vtbl.getPoint(q, point_count - 1, &sample_offset, &value) == vst3.types.kResultOk) {
+                                // Find parameter index by ID
+                                for (P.params, 0..) |param, idx| {
+                                    const expected_id = core.idHash(param.id());
+                                    if (expected_id == param_id) {
+                                        // Value is already normalized in VST3
+                                        const normalized: f32 = @floatCast(value);
+                                        wrapper.param_values.set(idx, normalized);
+                                        
+                                        // Update smoother target with plain value
+                                        const plain_value = param.toPlain(normalized);
+                                        wrapper.smoother_bank.setTarget(idx, wrapper.buffer_config.sample_rate, plain_value);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             
             // Build transport info
             const transport = if (data.process_context) |ctx| blk: {
@@ -516,6 +665,9 @@ pub fn Vst3Component(comptime T: type) type {
                 .input_events = wrapper.input_events_storage[0..input_event_count],
                 .output_events = &wrapper.event_output_list,
                 .sample_rate = wrapper.buffer_config.sample_rate,
+                .param_values_ptr = &wrapper.param_values,
+                .smoothers_ptr = &wrapper.smoother_bank,
+                .params_meta = P.params,
             };
             
             // Call plugin process

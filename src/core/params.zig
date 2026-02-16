@@ -103,6 +103,8 @@ pub const FloatParam = struct {
     unit: [:0]const u8 = "",
     /// Flags controlling automation, visibility, etc.
     flags: ParamFlags = .{},
+    /// Optional smoothing style (default: no smoothing).
+    smoothing: SmoothingStyle = .none,
 };
 
 /// A discrete integer parameter.
@@ -119,6 +121,8 @@ pub const IntParam = struct {
     unit: [:0]const u8 = "",
     /// Flags controlling automation, visibility, etc.
     flags: ParamFlags = .{},
+    /// Optional smoothing style (default: no smoothing).
+    smoothing: SmoothingStyle = .none,
 };
 
 /// A boolean (on/off, toggle) parameter.
@@ -191,6 +195,19 @@ pub const Param = union(enum) {
                 if (p.labels.len <= 1) break :blk 0.0;
                 break :blk @as(f32, @floatFromInt(p.default)) /
                     @as(f32, @floatFromInt(p.labels.len - 1));
+            },
+        };
+    }
+
+    /// Convert a normalized value to plain (unnormalized) value.
+    pub fn toPlain(self: Param, normalized: f32) f32 {
+        return switch (self) {
+            .float => |p| p.range.unnormalize(normalized),
+            .int => |p| @floatFromInt(p.range.unnormalize(normalized)),
+            .boolean => if (normalized > 0.5) 1.0 else 0.0,
+            .choice => |p| blk: {
+                if (p.labels.len <= 1) break :blk 0.0;
+                break :blk normalized * @as(f32, @floatFromInt(p.labels.len - 1));
             },
         };
     }
@@ -270,6 +287,265 @@ pub fn ParamValues(comptime N: usize) type {
         /// The number of parameters.
         pub fn count(_: *const Self) usize {
             return N;
+        }
+    };
+}
+
+// ---------------------------------------------------------------------------
+// Parameter Access During Processing
+// ---------------------------------------------------------------------------
+
+/// Parameter access interface for plugins during `process()`.
+///
+/// Provides type-safe methods to read parameter values and smoothed values.
+/// The wrapper populates this with pointers to `ParamValues` and `SmootherBank`.
+pub fn ParamAccess(comptime N: usize, comptime params_meta: []const Param) type {
+    return struct {
+        const Self = @This();
+        
+        values: *ParamValues(N),
+        smoothers: *SmootherBank(N),
+
+        /// Get the current plain value of a float parameter (no smoothing).
+        pub fn getFloat(self: *const Self, comptime index: usize) f32 {
+            comptime {
+                if (index >= N) @compileError("Parameter index out of bounds");
+                if (params_meta[index] != .float) @compileError("Parameter at index is not a float");
+            }
+            
+            const normalized = self.values.get(index);
+            return params_meta[index].float.range.unnormalize(normalized);
+        }
+
+        /// Get the current plain value of an int parameter.
+        pub fn getInt(self: *const Self, comptime index: usize) i32 {
+            comptime {
+                if (index >= N) @compileError("Parameter index out of bounds");
+                if (params_meta[index] != .int) @compileError("Parameter at index is not an int");
+            }
+            
+            const normalized = self.values.get(index);
+            return params_meta[index].int.range.unnormalize(normalized);
+        }
+
+        /// Get the current value of a bool parameter.
+        pub fn getBool(self: *const Self, comptime index: usize) bool {
+            comptime {
+                if (index >= N) @compileError("Parameter index out of bounds");
+                if (params_meta[index] != .boolean) @compileError("Parameter at index is not a boolean");
+            }
+            
+            const normalized = self.values.get(index);
+            return normalized > 0.5;
+        }
+
+        /// Get the current choice index of a choice parameter.
+        pub fn getChoice(self: *const Self, comptime index: usize) u32 {
+            comptime {
+                if (index >= N) @compileError("Parameter index out of bounds");
+                if (params_meta[index] != .choice) @compileError("Parameter at index is not a choice");
+            }
+            
+            const normalized = self.values.get(index);
+            if (params_meta[index].choice.labels.len <= 1) return 0;
+            return @intFromFloat(normalized * @as(f32, @floatFromInt(params_meta[index].choice.labels.len - 1)));
+        }
+
+        /// Get the next smoothed sample for a parameter.
+        /// If the parameter has no smoothing configured, returns the current value.
+        pub fn nextSmoothed(self: *Self, comptime index: usize) f32 {
+            comptime {
+                if (index >= N) @compileError("Parameter index out of bounds");
+            }
+            return self.smoothers.next(index);
+        }
+
+        /// Fill a block with smoothed values for a parameter.
+        pub fn nextSmoothedBlock(self: *Self, comptime index: usize, out: []f32) void {
+            comptime {
+                if (index >= N) @compileError("Parameter index out of bounds");
+            }
+            for (out) |*sample| {
+                sample.* = self.smoothers.next(index);
+            }
+        }
+    };
+}
+
+// ---------------------------------------------------------------------------
+// Parameter Smoothing
+// ---------------------------------------------------------------------------
+
+/// Smoothing style for parameter value changes.
+pub const SmoothingStyle = union(enum) {
+    /// No smoothing — parameter changes take effect immediately.
+    none,
+    /// Linear ramp over the specified duration in milliseconds.
+    linear: f32,
+    /// Exponential smoothing (single-pole IIR) over the specified duration.
+    /// Reaches approximately 99.99% of target, then snaps to target.
+    exponential: f32,
+};
+
+/// A parameter value smoother that interpolates between current and target
+/// values over time.
+///
+/// Supports linear and exponential smoothing styles. Used to avoid audible
+/// clicks and pops when parameters change abruptly.
+pub const Smoother = struct {
+    /// The smoothing style for this parameter.
+    style: SmoothingStyle,
+    /// Current smoothed value (plain, not normalized).
+    current: f32,
+    /// Target value to reach (plain, not normalized).
+    target: f32,
+    /// Per-sample step size (linear) or coefficient (exponential).
+    step_size: f32,
+    /// Number of samples remaining until target is reached.
+    steps_left: u32,
+
+    /// Initialize a smoother with a starting value and no smoothing.
+    pub fn init(initial_value: f32, style: SmoothingStyle) Smoother {
+        return Smoother{
+            .style = style,
+            .current = initial_value,
+            .target = initial_value,
+            .step_size = 0.0,
+            .steps_left = 0,
+        };
+    }
+
+    /// Set a new target value and compute smoothing parameters.
+    pub fn setTarget(self: *Smoother, sample_rate: f32, new_target: f32) void {
+        self.target = new_target;
+        
+        switch (self.style) {
+            .none => {
+                self.current = new_target;
+                self.steps_left = 0;
+                self.step_size = 0.0;
+            },
+            .linear => |duration_ms| {
+                const duration_samples = (sample_rate * duration_ms) / 1000.0;
+                self.steps_left = @intFromFloat(@max(1.0, duration_samples));
+                const delta = self.target - self.current;
+                self.step_size = delta / @as(f32, @floatFromInt(self.steps_left));
+            },
+            .exponential => |duration_ms| {
+                // Single-pole IIR: y[n] = y[n-1] + coeff * (target - y[n-1])
+                // We want to reach ~99.99% in duration_samples
+                // After N steps: remaining = (1 - coeff)^N ≈ 0.0001
+                // coeff = 1 - exp(ln(0.0001) / N)
+                const duration_samples = (sample_rate * duration_ms) / 1000.0;
+                const n = @max(1.0, duration_samples);
+                const ln_remaining = @log(0.0001);
+                self.step_size = 1.0 - @exp(ln_remaining / n);
+                // For exponential, steps_left is just a sentinel until we snap
+                self.steps_left = @intFromFloat(n);
+            },
+        }
+    }
+
+    /// Get the next smoothed sample value and advance the smoother.
+    pub fn next(self: *Smoother) f32 {
+        if (self.steps_left == 0) {
+            return self.current;
+        }
+
+        switch (self.style) {
+            .none => {
+                return self.current;
+            },
+            .linear => {
+                self.current += self.step_size;
+                self.steps_left -= 1;
+                if (self.steps_left == 0) {
+                    self.current = self.target; // Snap to exact target
+                }
+                return self.current;
+            },
+            .exponential => {
+                self.current += self.step_size * (self.target - self.current);
+                self.steps_left -= 1;
+                if (self.steps_left == 0) {
+                    self.current = self.target; // Snap to exact target
+                }
+                return self.current;
+            },
+        }
+    }
+
+    /// Fill a block of samples with smoothed values.
+    pub fn nextBlock(self: *Smoother, out: []f32) void {
+        for (out) |*sample| {
+            sample.* = self.next();
+        }
+    }
+
+    /// Reset the smoother to a specific value instantly (no smoothing).
+    pub fn reset(self: *Smoother, value: f32) void {
+        self.current = value;
+        self.target = value;
+        self.steps_left = 0;
+        self.step_size = 0.0;
+    }
+
+    /// Returns true if the smoother is actively interpolating.
+    pub fn isSmoothing(self: *const Smoother) bool {
+        return self.steps_left > 0;
+    }
+};
+
+/// A bank of smoothers, one per parameter.
+///
+/// `N` is the number of parameters, known at comptime.
+pub fn SmootherBank(comptime N: usize) type {
+    return struct {
+        const Self = @This();
+        
+        /// One smoother per parameter.
+        smoothers: [N]Smoother,
+
+        /// Initialize all smoothers from parameter declarations.
+        pub fn init(comptime params: []const Param) Self {
+            var bank: [N]Smoother = undefined;
+            inline for (params, 0..) |p, i| {
+                const style: SmoothingStyle = switch (p) {
+                    .float => |fp| if (@hasField(@TypeOf(fp), "smoothing")) fp.smoothing else .none,
+                    .int => |ip| if (@hasField(@TypeOf(ip), "smoothing")) ip.smoothing else .none,
+                    .boolean, .choice => .none,
+                };
+                
+                const default_plain: f32 = switch (p) {
+                    .float => |fp| fp.default,
+                    .int => |ip| @floatFromInt(ip.default),
+                    .boolean => |bp| if (bp.default) 1.0 else 0.0,
+                    .choice => |cp| @floatFromInt(cp.default),
+                };
+                
+                bank[i] = Smoother.init(default_plain, style);
+            }
+            return Self{ .smoothers = bank };
+        }
+
+        /// Set a new target value for a parameter's smoother.
+        pub fn setTarget(self: *Self, index: usize, sample_rate: f32, plain_value: f32) void {
+            self.smoothers[index].setTarget(sample_rate, plain_value);
+        }
+
+        /// Get the next smoothed sample for a parameter.
+        pub fn next(self: *Self, index: usize) f32 {
+            return self.smoothers[index].next();
+        }
+
+        /// Reset a parameter's smoother to a specific value.
+        pub fn reset(self: *Self, index: usize, value: f32) void {
+            self.smoothers[index].reset(value);
+        }
+
+        /// Returns true if a parameter is currently smoothing.
+        pub fn isSmoothing(self: *const Self, index: usize) bool {
+            return self.smoothers[index].isSmoothing();
         }
     };
 }
@@ -400,3 +676,207 @@ test "ParamValues init and get" {
     pv.set(0, 0.75);
     try std.testing.expectApproxEqAbs(@as(f32, 0.75), pv.get(0), 1e-6);
 }
+
+test "Smoother linear reaches target" {
+    var smoother = Smoother.init(0.0, .{ .linear = 10.0 }); // 10ms linear
+    const sample_rate = 1000.0; // 1kHz
+    
+    smoother.setTarget(sample_rate, 10.0);
+    
+    // Should reach target in 10 samples (10ms at 1kHz)
+    try std.testing.expectEqual(@as(u32, 10), smoother.steps_left);
+    
+    // First sample
+    const v1 = smoother.next();
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), v1, 1e-4);
+    
+    // Last sample should snap to target
+    smoother.steps_left = 1;
+    smoother.current = 9.9;
+    const v_last = smoother.next();
+    try std.testing.expectApproxEqAbs(@as(f32, 10.0), v_last, 1e-6);
+    try std.testing.expectEqual(@as(u32, 0), smoother.steps_left);
+}
+
+test "Smoother exponential converges" {
+    var smoother = Smoother.init(0.0, .{ .exponential = 10.0 });
+    const sample_rate = 1000.0;
+    
+    smoother.setTarget(sample_rate, 1.0);
+    
+    // Exponential should approach target asymptotically
+    const v1 = smoother.next();
+    try std.testing.expect(v1 > 0.0 and v1 < 1.0);
+    
+    const v2 = smoother.next();
+    try std.testing.expect(v2 > v1 and v2 < 1.0);
+    
+    // After steps_left reaches 0, should snap to target
+    smoother.steps_left = 1;
+    smoother.current = 0.999;
+    const v_snap = smoother.next();
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), v_snap, 1e-6);
+}
+
+test "Smoother none has no smoothing" {
+    var smoother = Smoother.init(5.0, .none);
+    
+    smoother.setTarget(44100.0, 10.0);
+    try std.testing.expectApproxEqAbs(@as(f32, 10.0), smoother.current, 1e-6);
+    try std.testing.expectEqual(@as(u32, 0), smoother.steps_left);
+    
+    const v = smoother.next();
+    try std.testing.expectApproxEqAbs(@as(f32, 10.0), v, 1e-6);
+}
+
+test "Smoother reset snaps instantly" {
+    var smoother = Smoother.init(0.0, .{ .linear = 100.0 });
+    
+    smoother.setTarget(44100.0, 10.0);
+    try std.testing.expect(smoother.steps_left > 0);
+    
+    smoother.reset(5.0);
+    try std.testing.expectApproxEqAbs(@as(f32, 5.0), smoother.current, 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 5.0), smoother.target, 1e-6);
+    try std.testing.expectEqual(@as(u32, 0), smoother.steps_left);
+}
+
+test "Smoother isSmoothing" {
+    var smoother = Smoother.init(0.0, .{ .linear = 10.0 });
+    
+    try std.testing.expect(!smoother.isSmoothing());
+    
+    smoother.setTarget(1000.0, 1.0);
+    try std.testing.expect(smoother.isSmoothing());
+    
+    smoother.reset(0.5);
+    try std.testing.expect(!smoother.isSmoothing());
+}
+
+test "SmootherBank init and setTarget" {
+    const params = [_]Param{
+        .{ .float = .{
+            .name = "Gain",
+            .id = "gain",
+            .default = 0.0,
+            .range = .{ .min = -24.0, .max = 24.0 },
+            .smoothing = .{ .linear = 10.0 },
+        } },
+        .{ .int = .{
+            .name = "Cutoff",
+            .id = "cutoff",
+            .default = 1000,
+            .range = .{ .min = 20, .max = 20000 },
+        } },
+    };
+    
+    var bank = SmootherBank(2).init(&params);
+    
+    // Initial values should match defaults
+    try std.testing.expectApproxEqAbs(@as(f32, 0.0), bank.smoothers[0].current, 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 1000.0), bank.smoothers[1].current, 1e-6);
+    
+    // Set new targets
+    bank.setTarget(0, 44100.0, 6.0);
+    try std.testing.expect(bank.isSmoothing(0));
+    try std.testing.expectApproxEqAbs(@as(f32, 6.0), bank.smoothers[0].target, 1e-6);
+}
+
+test "ParamAccess typed getters" {
+    const params = [_]Param{
+        .{ .float = .{
+            .name = "Gain",
+            .id = "gain",
+            .default = 0.0,
+            .range = .{ .min = -24.0, .max = 24.0 },
+        } },
+        .{ .int = .{
+            .name = "Cutoff",
+            .id = "cutoff",
+            .default = 1000,
+            .range = .{ .min = 20, .max = 20000 },
+        } },
+        .{ .boolean = .{
+            .name = "Bypass",
+            .id = "bypass",
+            .default = false,
+        } },
+        .{ .choice = .{
+            .name = "Mode",
+            .id = "mode",
+            .default = 0,
+            .labels = &.{ "Low", "Mid", "High" },
+        } },
+    };
+    
+    var param_values = ParamValues(4).init(&params);
+    var smoother_bank = SmootherBank(4).init(&params);
+    
+    const access = ParamAccess(4, &params){
+        .values = &param_values,
+        .smoothers = &smoother_bank,
+    };
+    
+    // Test getFloat
+    param_values.set(0, 0.75); // 0.75 normalized = 12.0 in [-24, 24] range
+    const gain = access.getFloat(0);
+    try std.testing.expectApproxEqAbs(@as(f32, 12.0), gain, 1e-4);
+    
+    // Test getInt
+    param_values.set(1, 0.5); // 0.5 normalized = ~10010 in [20, 20000] range
+    const cutoff = access.getInt(1);
+    try std.testing.expectEqual(@as(i32, 10010), cutoff);
+    
+    // Test getBool
+    param_values.set(2, 0.0);
+    try std.testing.expect(!access.getBool(2));
+    param_values.set(2, 1.0);
+    try std.testing.expect(access.getBool(2));
+    
+    // Test getChoice
+    param_values.set(3, 0.5); // Middle choice
+    const mode = access.getChoice(3);
+    try std.testing.expectEqual(@as(u32, 1), mode);
+}
+
+test "Param toPlain conversion" {
+    // Float param
+    const float_param = Param{ .float = .{
+        .name = "Gain",
+        .id = "gain",
+        .default = 0.0,
+        .range = .{ .min = -24.0, .max = 24.0 },
+    } };
+    const float_plain = float_param.toPlain(0.75); // 0.75 normalized = 12.0 in [-24, 24] range
+    try std.testing.expectApproxEqAbs(@as(f32, 12.0), float_plain, 1e-4);
+    
+    // Int param
+    const int_param = Param{ .int = .{
+        .name = "Cutoff",
+        .id = "cutoff",
+        .default = 1000,
+        .range = .{ .min = 20, .max = 20000 },
+    } };
+    const int_plain = int_param.toPlain(0.5); // 0.5 normalized = ~10010 in [20, 20000] range
+    try std.testing.expectApproxEqAbs(@as(f32, 10010.0), int_plain, 1.0);
+    
+    // Boolean param
+    const bool_param = Param{ .boolean = .{
+        .name = "Bypass",
+        .id = "bypass",
+        .default = false,
+    } };
+    try std.testing.expectApproxEqAbs(@as(f32, 0.0), bool_param.toPlain(0.0), 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), bool_param.toPlain(1.0), 1e-6);
+    
+    // Choice param
+    const choice_param = Param{ .choice = .{
+        .name = "Mode",
+        .id = "mode",
+        .default = 0,
+        .labels = &.{ "Low", "Mid", "High" },
+    } };
+    const choice_plain = choice_param.toPlain(0.5); // Middle choice
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), choice_plain, 1e-6);
+}
+

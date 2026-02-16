@@ -67,6 +67,51 @@ pub const ProcessContext = struct {
     output_events: *EventOutputList,
     /// The host's current sample rate in Hz.
     sample_rate: f32,
+    
+    // Parameter access (opaque pointers to avoid making ProcessContext generic)
+    param_values_ptr: ?*anyopaque = null,
+    smoothers_ptr: ?*anyopaque = null,
+    params_meta: []const Param = &[_]Param{},
+    
+    /// Get the current plain value of a float parameter at comptime-known index.
+    /// N is the total number of parameters.
+    pub fn getFloat(self: *const ProcessContext, comptime N: usize, comptime index: usize) f32 {
+        const param = self.params_meta[index];
+        const values: *const params_mod.ParamValues(N) = @ptrCast(@alignCast(self.param_values_ptr));
+        const normalized = values.get(index);
+        return param.float.range.unnormalize(normalized);
+    }
+    
+    /// Get the current plain value of an int parameter at comptime-known index.
+    pub fn getInt(self: *const ProcessContext, comptime N: usize, comptime index: usize) i32 {
+        const param = self.params_meta[index];
+        const values: *const params_mod.ParamValues(N) = @ptrCast(@alignCast(self.param_values_ptr));
+        const normalized = values.get(index);
+        return param.int.range.unnormalize(normalized);
+    }
+    
+    /// Get the current value of a bool parameter at comptime-known index.
+    pub fn getBool(self: *const ProcessContext, comptime N: usize, comptime index: usize) bool {
+        const values: *const params_mod.ParamValues(N) = @ptrCast(@alignCast(self.param_values_ptr));
+        const normalized = values.get(index);
+        return normalized > 0.5;
+    }
+    
+    /// Get the current choice index of a choice parameter at comptime-known index.
+    pub fn getChoice(self: *const ProcessContext, comptime N: usize, comptime index: usize) u32 {
+        const param = self.params_meta[index];
+        const values: *const params_mod.ParamValues(N) = @ptrCast(@alignCast(self.param_values_ptr));
+        const normalized = values.get(index);
+        if (param.choice.labels.len <= 1) return 0;
+        return @intFromFloat(normalized * @as(f32, @floatFromInt(param.choice.labels.len - 1)));
+    }
+    
+    /// Get the next smoothed sample for a parameter.
+    /// Returns the current value if smoothing is not configured for this parameter.
+    pub fn nextSmoothed(self: *ProcessContext, comptime N: usize, comptime index: usize) f32 {
+        const smoothers: *params_mod.SmootherBank(N) = @ptrCast(@alignCast(self.smoothers_ptr));
+        return smoothers.next(index);
+    }
 };
 
 // ---------------------------------------------------------------------------
@@ -229,6 +274,11 @@ pub fn Plugin(comptime T: type) type {
         // MIDI I/O config (with defaults)
         pub const midi_input = if (@hasDecl(T, "midi_input")) T.midi_input else MidiConfig.none;
         pub const midi_output = if (@hasDecl(T, "midi_output")) T.midi_output else MidiConfig.none;
+        
+        /// Whether the plugin requests sample-accurate parameter automation.
+        /// When true, the wrapper will split process buffers at parameter change points.
+        /// When false (default), parameter changes apply at the start of each block.
+        pub const sample_accurate_automation = if (@hasDecl(T, "sample_accurate_automation")) T.sample_accurate_automation else false;
 
         // Optional callbacks
         pub const has_reset = @hasDecl(T, "reset");
@@ -408,3 +458,58 @@ test "Plugin optional callbacks" {
     try std.testing.expect(!P.has_save);
     try std.testing.expect(!P.has_load);
 }
+
+test "ProcessContext parameter access via methods" {
+    const params = [_]Param{
+        .{ .float = .{
+            .name = "Gain",
+            .id = "gain",
+            .default = 0.0,
+            .range = .{ .min = -24.0, .max = 24.0 },
+        } },
+        .{ .int = .{
+            .name = "Cutoff",
+            .id = "cutoff",
+            .default = 1000,
+            .range = .{ .min = 20, .max = 20000 },
+        } },
+        .{ .boolean = .{
+            .name = "Bypass",
+            .id = "bypass",
+            .default = false,
+        } },
+    };
+    
+    var param_values = params_mod.ParamValues(3).init(&params);
+    var smoother_bank = params_mod.SmootherBank(3).init(&params);
+    
+    var event_storage: [4]NoteEvent = undefined;
+    var event_list = EventOutputList{ .events = &event_storage };
+    
+    var context = ProcessContext{
+        .transport = Transport{},
+        .input_events = &[_]NoteEvent{},
+        .output_events = &event_list,
+        .sample_rate = 44100.0,
+        .param_values_ptr = &param_values,
+        .smoothers_ptr = &smoother_bank,
+        .params_meta = &params,
+    };
+    
+    // Test getFloat
+    param_values.set(0, 0.75); // 0.75 normalized = 12.0 in [-24, 24] range
+    const gain = context.getFloat(3, 0);
+    try std.testing.expectApproxEqAbs(@as(f32, 12.0), gain, 1e-4);
+    
+    // Test getInt
+    param_values.set(1, 0.5); // 0.5 normalized = ~10010 in [20, 20000] range
+    const cutoff = context.getInt(3, 1);
+    try std.testing.expectEqual(@as(i32, 10010), cutoff);
+    
+    // Test getBool
+    param_values.set(2, 0.0);
+    try std.testing.expect(!context.getBool(3, 2));
+    param_values.set(2, 1.0);
+    try std.testing.expect(context.getBool(3, 2));
+}
+

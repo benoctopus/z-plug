@@ -24,6 +24,7 @@ These are non-negotiable. Every change must respect them:
 2. **Comptime-driven metadata** — Use Zig's `comptime` to generate vtables, parameter lists, GUIDs, and export symbols. No runtime reflection or code generation.
 3. **No allocations on the audio thread** — The framework enforces real-time safety by design. `process` functions must never call allocators, acquire locks, or perform I/O.
 4. **Minimal magic** — Prefer explicit over implicit. No hidden globals, no implicit initialization order.
+5. **USE SIMD liberally where it makes sense** — This applies to abstractions and framework code, as well as making it convenient for plugin authors to use SIMD in their DSP code.
 
 ## Architecture Layers
 

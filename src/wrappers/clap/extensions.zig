@@ -307,11 +307,45 @@ pub fn Extensions(comptime T: type) type {
         }
         
         fn paramsFlush(
-            _: *const clap.Plugin,
-            _: *const clap.events.InputEvents,
+            plugin: *const clap.Plugin,
+            in_events: *const clap.events.InputEvents,
             _: *const clap.events.OutputEvents,
         ) callconv(.c) void {
-            // TODO: Process parameter change events outside of process()
+            const wrapper = @as(*anyopaque, @ptrFromInt(@intFromPtr(plugin) - @offsetOf(@import("plugin.zig").PluginWrapper(T), "clap_plugin")));
+            const self: *@import("plugin.zig").PluginWrapper(T) = @ptrCast(@alignCast(wrapper));
+            
+            // Process all input parameter events
+            const event_count = in_events.size(in_events);
+            var i: u32 = 0;
+            while (i < event_count) : (i += 1) {
+                const header = in_events.get(in_events, i);
+                if (header.type == .param_value) {
+                    const event: *const clap.events.ParamValue = @ptrCast(@alignCast(header));
+                    // Find parameter index by ID
+                    for (P.params, 0..) |param, idx| {
+                        const param_id = core.idHash(param.id());
+                        if (param_id == event.param_id) {
+                            // Convert plain value to normalized
+                            const normalized = switch (param) {
+                                .float => |p| p.range.normalize(@floatCast(event.value)),
+                                .int => |p| p.range.normalize(@intFromFloat(event.value)),
+                                .boolean => if (event.value > 0.5) @as(f32, 1.0) else @as(f32, 0.0),
+                                .choice => |p| blk: {
+                                    if (p.labels.len <= 1) break :blk 0.0;
+                                    const choice_idx = @min(@as(u32, @intFromFloat(event.value)), @as(u32, @intCast(p.labels.len - 1)));
+                                    break :blk @as(f32, @floatFromInt(choice_idx)) / @as(f32, @floatFromInt(p.labels.len - 1));
+                                },
+                            };
+                            self.param_values.set(idx, normalized);
+                            
+                            // Update smoother target with the plain value
+                            const plain_value: f32 = @floatCast(event.value);
+                            self.smoother_bank.setTarget(idx, self.buffer_config.sample_rate, plain_value);
+                            break;
+                        }
+                    }
+                }
+            }
         }
         
         // -------------------------------------------------------------------
