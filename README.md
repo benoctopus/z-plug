@@ -14,11 +14,28 @@ See [zig-plug-design.md](zig-plug-design.md) for the complete design document.
 
 ## Project Status
 
-🚧 **Phase 1: Foundations** — Low-level bindings layer complete:
-- ✅ CLAP bindings (Zig 0.15.2 compatible)
-- ✅ VST3 C API bindings (hand-written, ~12 core interfaces)
-- ✅ Build system configured with module support
-- 🔲 Framework core (next phase)
+✅ **Phase 1: Foundations** — Complete
+- CLAP bindings (Zig 0.15.2 compatible, LGPL v3)
+- VST3 C API bindings (hand-written, ~12 core interfaces, MIT)
+- Build system configured with module support
+
+✅ **Phase 2: Framework Core** — Complete
+- API-agnostic plugin interface with comptime validation
+- Zero-copy buffer abstraction with three iteration strategies
+- Unified note/MIDI event system
+- Parameter system with atomic runtime storage
+- State persistence interface (save/load)
+- Audio I/O configuration and transport abstraction
+
+🔲 **Phase 3: Format Wrappers** — Planned
+- CLAP wrapper (C struct ABI)
+- VST3 wrapper (COM vtable ABI)
+- Build system `addPlugin()` helper
+
+🔲 **Phase 4: Examples and Polish** — Planned
+- Example plugins (gain, synth)
+- Documentation and tutorial expansion
+- CI/CD integration
 
 ## Building
 
@@ -36,12 +53,13 @@ zig build test
 
 ```
 src/
+  core/            # Framework core (API-agnostic) ✅
   bindings/
-    clap/          # CLAP C API bindings (LGPL v3)
-    vst3/          # VST3 C API bindings (MIT)
-  core/            # Framework core (coming soon)
-  wrappers/        # Format-specific wrappers (coming soon)
-  root.zig         # Public API
+    clap/          # CLAP C API bindings (LGPL v3) ✅
+    vst3/          # VST3 C API bindings (MIT) ✅
+  wrappers/        # Format-specific wrappers (planned)
+  root.zig         # Public API ✅
+docs/              # High-level documentation ✅
 ```
 
 ## License and Attribution
@@ -63,8 +81,15 @@ This project's framework code is licensed under [TBD].
 
 ## Documentation
 
-- [zig-plug-design.md](zig-plug-design.md) — Complete design document with architecture, references, and phased implementation plan
-- [AGENTS.md](AGENTS.md) — Coding guidelines for AI agents working on this project
+### For Plugin Authors
+- **[docs/plugin-authors.md](docs/plugin-authors.md)** — Public API guide with examples
+- **[docs/getting-started.md](docs/getting-started.md)** — Development environment setup
+
+### For Contributors
+- **[docs/architecture.md](docs/architecture.md)** — How the layers fit together
+- **[AGENTS.md](AGENTS.md)** — Coding standards and architecture rules
+- **[zig-plug-design.md](zig-plug-design.md)** — Complete design document with rationale
+- **Module READMEs** — See `src/*/README.md` for module-specific docs
 
 ## Contributing
 

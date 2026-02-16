@@ -186,6 +186,50 @@ The build system (`build.zig`) must:
 - No `@import("std").debug.print` in production code paths. Use it only in tests.
 - Errors should be descriptive: prefer named error sets over `anyerror`.
 
+## Documentation
+
+This project uses a two-tier documentation structure:
+
+### High-Level Documentation (`docs/`)
+
+Topic-based guides for contributors and plugin authors:
+- **`docs/architecture.md`** — How the four layers (plugin code → core → wrappers → bindings) fit together, data flow, key design decisions
+- **`docs/getting-started.md`** — Development environment setup, building, running tests, project structure
+- **`docs/plugin-authors.md`** — Public API guide for writing plugins (examples, parameter system, buffer access, events, state)
+
+These docs provide practical guidance and reference `zig-plug-design.md` for deep design rationale rather than duplicating it.
+
+### Module-Level Documentation (per-module `README.md`)
+
+Each module under `src/` has a `README.md` colocated with the code:
+- **`src/core/README.md`** — Framework core module overview (purpose, files, key types, design notes)
+- **`src/bindings/clap/README.md`** — CLAP bindings module (origin, license, structure, key types)
+- **`src/bindings/vst3/README.md`** — VST3 bindings module (purpose, license, structure, key types)
+
+Module READMEs are short (1–2 screenfulls), describing what the module does, its structure, and key types. They do not duplicate API docs — the code has `///` doc comments for that.
+
+### Documentation Rules
+
+**Before working in a module:**
+1. Read the module's `README.md` (e.g., `src/core/README.md`)
+2. Check related high-level docs in `docs/` (e.g., `docs/architecture.md`)
+3. Review this file (`AGENTS.md`) for coding standards
+
+**After making changes:**
+1. If the change affects the public API, types, or module structure, update the corresponding module `README.md`
+2. If the change affects high-level architecture, patterns, or workflow, update the relevant `docs/` file
+3. Always update `///` doc comments on modified public declarations
+
+**When creating a new module:**
+- Include a `README.md` describing the module's purpose, structure, and key types
+- Follow the patterns in existing module READMEs
+- Update `docs/architecture.md` if the new module affects the overall architecture
+
+**Audience:**
+- `docs/` targets contributors and plugin authors (practical guidance)
+- Module READMEs target developers working in that specific module
+- `///` doc comments target API consumers (reference documentation)
+
 ## Commit and Change Guidelines
 
 - Keep changes small and focused. One logical change per commit.
