@@ -13,6 +13,7 @@ pub const events = @import("events.zig");
 pub const param_changes = @import("param_changes.zig");
 pub const connection = @import("connection.zig");
 pub const view = @import("view.zig");
+pub const layout_tests = @import("layout_tests.zig");
 
 // Commonly used types
 pub const TUID = types.TUID;
