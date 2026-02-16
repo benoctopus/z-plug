@@ -5,7 +5,6 @@
 
 pub const Version = @import("version.zig").Version;
 pub const Entry = @import("entry.zig").Entry;
-pub extern const clap_entry: Entry;
 
 pub const PluginFactory = @import("factory/plugin.zig").Factory;
 pub const preset_discovery = @import("factory/preset_discovery.zig");

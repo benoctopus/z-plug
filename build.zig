@@ -27,14 +27,18 @@ pub fn addPlugin(
     
     // Build CLAP plugin
     if (options.formats.clap) {
-        const clap_lib = b.addSharedLibrary(.{
+        const clap_lib = b.addLibrary(.{
             .name = options.name,
-            .root_source_file = options.root_source_file,
-            .target = options.target,
-            .optimize = options.optimize,
+            .root_module = b.createModule(.{
+                .root_source_file = options.root_source_file,
+                .target = options.target,
+                .optimize = options.optimize,
+                .imports = &.{
+                    .{ .name = "z_plug", .module = z_plug },
+                },
+            }),
+            .linkage = .dynamic,
         });
-        
-        clap_lib.root_module.addImport("z_plug", z_plug);
         
         // Install as .clap
         const install_clap = b.addInstallArtifact(clap_lib, .{
@@ -53,14 +57,18 @@ pub fn addPlugin(
     
     // Build VST3 plugin
     if (options.formats.vst3) {
-        const vst3_lib = b.addSharedLibrary(.{
+        const vst3_lib = b.addLibrary(.{
             .name = options.name,
-            .root_source_file = options.root_source_file,
-            .target = options.target,
-            .optimize = options.optimize,
+            .root_module = b.createModule(.{
+                .root_source_file = options.root_source_file,
+                .target = options.target,
+                .optimize = options.optimize,
+                .imports = &.{
+                    .{ .name = "z_plug", .module = z_plug },
+                },
+            }),
+            .linkage = .dynamic,
         });
-        
-        vst3_lib.root_module.addImport("z_plug", z_plug);
         
         // Install as VST3 bundle
         const target_info = options.target.result;
@@ -70,7 +78,52 @@ pub fn addPlugin(
             const install_vst3 = b.addInstallArtifact(vst3_lib, .{
                 .dest_dir = .{ .override = .{ .custom = bundle_dir } },
             });
-            b.getInstallStep().dependOn(&install_vst3.step);
+            
+            // Rename libZigGain.dylib to ZigGain (macOS bundle executable)
+            const rename_binary = b.addInstallFile(
+                vst3_lib.getEmittedBin(),
+                b.fmt("plugins/{s}.vst3/Contents/MacOS/{s}", .{options.name, options.name}),
+            );
+            rename_binary.step.dependOn(&install_vst3.step);
+            
+            // Generate Info.plist
+            const info_plist_content = b.fmt(
+                \\<?xml version="1.0" encoding="UTF-8"?>
+                \\<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+                \\<plist version="1.0">
+                \\  <dict>
+                \\    <key>CFBundleExecutable</key>
+                \\    <string>{s}</string>
+                \\    <key>CFBundleIdentifier</key>
+                \\    <string>com.zplugin.{s}</string>
+                \\    <key>CFBundleName</key>
+                \\    <string>{s}</string>
+                \\    <key>CFBundlePackageType</key>
+                \\    <string>BNDL</string>
+                \\    <key>CFBundleSignature</key>
+                \\    <string>????</string>
+                \\    <key>CFBundleVersion</key>
+                \\    <string>1.0.0</string>
+                \\    <key>NSHighResolutionCapable</key>
+                \\    <true/>
+                \\  </dict>
+                \\</plist>
+                \\
+            , .{options.name, options.name, options.name});
+            
+            const write_files = b.addWriteFiles();
+            const info_plist_file = write_files.add("Info.plist", info_plist_content);
+            const pkginfo_file = write_files.add("PkgInfo", "BNDL????");
+            
+            const info_plist_path = b.fmt("plugins/{s}.vst3/Contents/Info.plist", .{options.name});
+            const install_info_plist = b.addInstallFile(info_plist_file, info_plist_path);
+            
+            const pkginfo_path = b.fmt("plugins/{s}.vst3/Contents/PkgInfo", .{options.name});
+            const install_pkginfo = b.addInstallFile(pkginfo_file, pkginfo_path);
+            
+            b.getInstallStep().dependOn(&rename_binary.step);
+            b.getInstallStep().dependOn(&install_info_plist.step);
+            b.getInstallStep().dependOn(&install_pkginfo.step);
         } else {
             // Linux/Windows: just install as .vst3
             const install_vst3 = b.addInstallArtifact(vst3_lib, .{
@@ -128,6 +181,15 @@ pub fn build(b: *std.Build) void {
             .{ .name = "clap-bindings", .module = clap_bindings },
             .{ .name = "vst3-bindings", .module = vst3_bindings },
         },
+    });
+
+    // Build example gain plugin
+    addPlugin(b, .{
+        .name = "ZigGain",
+        .root_source_file = b.path("examples/gain.zig"),
+        .target = target,
+        .optimize = optimize,
+        .formats = .{ .clap = true, .vst3 = true },
     });
 
     // Here we define an executable. An executable needs to have a root module

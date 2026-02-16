@@ -17,6 +17,49 @@ pub fn Vst3Factory(comptime T: type) type {
             return @ptrCast(&factory_instance);
         }
         
+        // Platform-specific module initialization exports
+        // These are required by VST3 hosts but we have no global state to initialize
+        
+        const builtin = @import("builtin");
+        
+        // Conditionally export platform-specific module init/deinit functions
+        comptime {
+            if (builtin.os.tag == .macos) {
+                @export(&bundleEntryImpl, .{ .name = "bundleEntry" });
+                @export(&bundleExitImpl, .{ .name = "bundleExit" });
+            } else if (builtin.os.tag == .linux) {
+                @export(&moduleEntryImpl, .{ .name = "ModuleEntry" });
+                @export(&moduleExitImpl, .{ .name = "ModuleExit" });
+            } else if (builtin.os.tag == .windows) {
+                @export(&initDllImpl, .{ .name = "InitDll" });
+                @export(&exitDllImpl, .{ .name = "ExitDll" });
+            }
+        }
+        
+        fn bundleEntryImpl(_: *anyopaque) callconv(.c) bool {
+            return true;
+        }
+        
+        fn bundleExitImpl() callconv(.c) bool {
+            return true;
+        }
+        
+        fn moduleEntryImpl(_: *anyopaque) callconv(.c) bool {
+            return true;
+        }
+        
+        fn moduleExitImpl() callconv(.c) bool {
+            return true;
+        }
+        
+        fn initDllImpl() callconv(.c) bool {
+            return true;
+        }
+        
+        fn exitDllImpl() callconv(.c) bool {
+            return true;
+        }
+        
         /// Singleton factory instance.
         var factory_instance = FactoryObject{
             .vtbl = &factory_vtbl,
@@ -163,19 +206,37 @@ pub fn Vst3Factory(comptime T: type) type {
             iid: vst3.types.FIDString,
             obj: *?*anyopaque,
         ) callconv(.c) vst3.tresult {
-            // Check if the requested class ID matches our plugin
-            _ = cid; // For now, skip string comparison
-            _ = iid; // Interface ID check handled by queryInterface
+            // cid and iid are pointers to 16-byte TUIDs (not null-terminated strings)
+            const cid_bytes: *const vst3.TUID = @ptrCast(@alignCast(cid));
+            const iid_bytes: *const vst3.TUID = @ptrCast(@alignCast(iid));
+            
+            // Validate CID matches our plugin
+            const expected_cid = pluginIdToTuid(P.plugin_id);
+            if (!vst3.guid.eql(cid_bytes.*, expected_cid)) {
+                obj.* = null;
+                return vst3.types.kResultFalse;
+            }
             
             // Create the component
             const comp = component.Vst3Component(T).create() catch {
                 obj.* = null;
-                return vst3.types.kResultFalse;
+                return vst3.types.kOutOfMemory;
             };
             
-            // Return the IComponent interface
-            obj.* = @ptrCast(comp);
-            return vst3.types.kResultOk;
+            // Validate IID via queryInterface
+            const comp_ptr: *anyopaque = @ptrCast(comp);
+            const query_result = comp.component_vtbl.lpVtbl.queryInterface(comp_ptr, iid_bytes, obj);
+            
+            if (query_result == vst3.types.kResultOk) {
+                // queryInterface added a ref (now ref_count=2), release factory's ref
+                _ = comp.component_vtbl.lpVtbl.release(comp_ptr);
+                return vst3.types.kResultOk;
+            }
+            
+            // Requested interface not supported -- release and fail
+            _ = comp.component_vtbl.lpVtbl.release(comp_ptr);
+            obj.* = null;
+            return vst3.types.kNoInterface;
         }
         
         /// Convert a plugin ID string to a VST3 TUID using a deterministic hash.

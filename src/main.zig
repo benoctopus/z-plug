@@ -1,10 +1,7 @@
 const std = @import("std");
-const z_plug = @import("z_plug");
 
 pub fn main() !void {
-    // Prints to stderr, ignoring potential errors.
-    std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
-    try z_plug.bufferedPrint();
+    std.debug.print("zig-plug audio plugin framework\n", .{});
 }
 
 test "simple test" {

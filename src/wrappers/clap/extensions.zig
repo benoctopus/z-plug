@@ -10,6 +10,15 @@ const core = @import("../../root.zig");
 pub fn Extensions(comptime T: type) type {
     const P = core.Plugin(T);
     
+    // Pre-compute parameter IDs at comptime to avoid runtime idHash calls
+    const param_ids = comptime blk: {
+        var ids: [P.params.len]u32 = undefined;
+        for (P.params, 0..) |param, i| {
+            ids[i] = core.idHash(param.id());
+        }
+        break :blk ids;
+    };
+    
     return struct {
         // -------------------------------------------------------------------
         // Audio Ports Extension
@@ -138,10 +147,10 @@ pub fn Extensions(comptime T: type) type {
             if (index >= P.params.len) return false;
             
             const param = P.params[index];
-            const param_id = core.idHash(param.id());
+            const param_id = param_ids[index];
             
             info.* = clap.ext.params.Info{
-                .id = param_id,
+                .id = @enumFromInt(param_id),
                 .flags = .{
                     .is_automatable = param.flags().automatable,
                     .is_modulatable = param.flags().modulatable,
@@ -193,8 +202,8 @@ pub fn Extensions(comptime T: type) type {
             
             // Find parameter by ID
             for (P.params, 0..) |param, idx| {
-                const param_id = core.idHash(param.id());
-                if (param_id == id) {
+                const param_id = param_ids[idx];
+                if (param_id == @intFromEnum(id)) {
                     const normalized = self.param_values.get(idx);
                     
                     // Convert normalized to plain value
@@ -223,9 +232,9 @@ pub fn Extensions(comptime T: type) type {
             out_buffer_capacity: u32,
         ) callconv(.c) bool {
             // Find parameter by ID
-            for (P.params) |param| {
-                const param_id = core.idHash(param.id());
-                if (param_id == id) {
+            for (P.params, 0..) |param, idx| {
+                const param_id = param_ids[idx];
+                if (param_id == @intFromEnum(id)) {
                     // Format the value
                     const text = switch (param) {
                         .float => |p| blk: {
@@ -241,8 +250,8 @@ pub fn Extensions(comptime T: type) type {
                         },
                         .boolean => if (value > 0.5) "On" else "Off",
                         .choice => |p| blk: {
-                            const idx = @as(usize, @intFromFloat(value));
-                            if (idx < p.labels.len) break :blk p.labels[idx];
+                            const choice_idx = @as(usize, @intFromFloat(value));
+                            if (choice_idx < p.labels.len) break :blk p.labels[choice_idx];
                             break :blk "?";
                         },
                     };
@@ -266,9 +275,9 @@ pub fn Extensions(comptime T: type) type {
             const text = std.mem.span(value_text);
             
             // Find parameter by ID
-            for (P.params) |param| {
-                const param_id = core.idHash(param.id());
-                if (param_id == id) {
+            for (P.params, 0..) |param, idx| {
+                const param_id = param_ids[idx];
+                if (param_id == @intFromEnum(id)) {
                     switch (param) {
                         .float => {
                             const parsed = std.fmt.parseFloat(f64, text) catch return false;
@@ -291,9 +300,9 @@ pub fn Extensions(comptime T: type) type {
                         },
                         .choice => |p| {
                             // Try to find matching label
-                            for (p.labels, 0..) |label, idx| {
+                            for (p.labels, 0..) |label, choice_idx| {
                                 if (std.ascii.eqlIgnoreCase(text, label)) {
-                                    out_value.* = @floatFromInt(idx);
+                                    out_value.* = @floatFromInt(choice_idx);
                                     return true;
                                 }
                             }
@@ -323,8 +332,8 @@ pub fn Extensions(comptime T: type) type {
                     const event: *const clap.events.ParamValue = @ptrCast(@alignCast(header));
                     // Find parameter index by ID
                     for (P.params, 0..) |param, idx| {
-                        const param_id = core.idHash(param.id());
-                        if (param_id == event.param_id) {
+                        const param_id = param_ids[idx];
+                        if (param_id == @intFromEnum(event.param_id)) {
                             // Convert plain value to normalized
                             const normalized = switch (param) {
                                 .float => |p| p.range.normalize(@floatCast(event.value)),

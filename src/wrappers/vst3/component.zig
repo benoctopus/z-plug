@@ -11,6 +11,15 @@ const controller = @import("controller.zig");
 pub fn Vst3Component(comptime T: type) type {
     const P = core.Plugin(T);
     
+    // Pre-compute parameter IDs at comptime
+    const param_ids = comptime blk: {
+        var ids: [P.params.len]u32 = undefined;
+        for (P.params, 0..) |param, i| {
+            ids[i] = core.idHash(param.id());
+        }
+        break :blk ids;
+    };
+    
     return struct {
         const Self = @This();
         
@@ -78,32 +87,25 @@ pub fn Vst3Component(comptime T: type) type {
         pub fn create() !*Self {
             const self = try std.heap.page_allocator.create(Self);
             
-            self.* = Self{
-                .component_vtbl = vst3.component.IComponent{
-                    .lpVtbl = &component_vtbl_instance,
-                },
-                .processor_vtbl = vst3.processor.IAudioProcessor{
-                    .lpVtbl = &processor_vtbl_instance,
-                },
-                .controller_interface = controller.Vst3Controller(T).init(),
-                .ref_count = std.atomic.Value(u32).init(1),
-                .plugin = undefined,
-                .param_values = core.ParamValues(P.params.len).init(P.params),
-                .smoother_bank = core.SmootherBank(P.params.len).init(P.params),
-                .buffer_config = undefined,
-                .current_layout = P.audio_io_layouts[0],
-                .input_events_storage = undefined,
-                .output_events_storage = undefined,
-                .event_output_list = core.EventOutputList{
-                    .events = &[_]core.NoteEvent{},
-                },
-                .is_active = false,
-                .aux_input_storage = undefined,
-                .aux_input_buffers = undefined,
-                .aux_input_channel_slices = undefined,
-                .aux_output_buffers = undefined,
-                .aux_output_channel_slices = undefined,
+            // Initialize vtables and small fields first
+            self.component_vtbl = vst3.component.IComponent{
+                .lpVtbl = &component_vtbl_instance,
             };
+            self.processor_vtbl = vst3.processor.IAudioProcessor{
+                .lpVtbl = &processor_vtbl_instance,
+            };
+            self.controller_interface = controller.Vst3Controller(T).init();
+            self.ref_count = std.atomic.Value(u32).init(1);
+            self.param_values = core.ParamValues(P.params.len).init(P.params);
+            self.smoother_bank = core.SmootherBank(P.params.len).init(P.params);
+            self.current_layout = P.audio_io_layouts[0];
+            self.event_output_list = core.EventOutputList{
+                .events = &[_]core.NoteEvent{},
+            };
+            self.is_active = false;
+            
+            // Large arrays are left uninitialized (will be properly initialized when needed)
+            // This avoids stack overflow from massive struct literals
             
             // Share param_values with controller
             self.controller_interface.param_values = &self.param_values;
@@ -835,7 +837,7 @@ pub fn Vst3Component(comptime T: type) type {
                             if (queue_vtbl.getPoint(q, point_count - 1, &sample_offset, &value) == vst3.types.kResultOk) {
                                 // Find parameter index by ID
                                 for (P.params, 0..) |param, idx| {
-                                    const expected_id = core.idHash(param.id());
+                                    const expected_id = param_ids[idx];
                                     if (expected_id == param_id) {
                                         // Value is already normalized in VST3
                                         const normalized: f32 = @floatCast(value);

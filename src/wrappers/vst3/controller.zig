@@ -9,6 +9,15 @@ const core = @import("../../root.zig");
 pub fn Vst3Controller(comptime T: type) type {
     const P = core.Plugin(T);
     
+    // Pre-compute parameter IDs at comptime
+    const param_ids = comptime blk: {
+        var ids: [P.params.len]u32 = undefined;
+        for (P.params, 0..) |param, i| {
+            ids[i] = core.idHash(param.id());
+        }
+        break :blk ids;
+    };
+    
     return struct {
         const Self = @This();
         
@@ -123,7 +132,7 @@ pub fn Vst3Controller(comptime T: type) type {
             }
             
             const param = P.params[@intCast(param_index)];
-            const param_id = core.idHash(param.id());
+            const param_id = param_ids[@intCast(param_index)];
             
             info.* = vst3.controller.ParameterInfo{
                 .id = param_id,
@@ -183,8 +192,8 @@ pub fn Vst3Controller(comptime T: type) type {
             string: *vst3.types.String128,
         ) callconv(.c) vst3.tresult {
             // Find parameter by ID
-            for (P.params) |param| {
-                const param_id = core.idHash(param.id());
+            for (P.params, 0..) |param, i| {
+                const param_id = param_ids[i];
                 if (param_id == id) {
                     // Format the value
                     const text = switch (param) {
@@ -210,9 +219,9 @@ pub fn Vst3Controller(comptime T: type) type {
                     
                     // Convert to UTF-16
                     @memset(string, 0);
-                    var i: usize = 0;
-                    while (i < text.len and i < 128) : (i += 1) {
-                        string[i] = text[i];
+                    var j: usize = 0;
+                    while (j < text.len and j < 128) : (j += 1) {
+                        string[j] = text[j];
                     }
                     
                     return vst3.types.kResultOk;
@@ -238,8 +247,8 @@ pub fn Vst3Controller(comptime T: type) type {
             value_normalized: vst3.types.ParamValue,
         ) callconv(.c) vst3.types.ParamValue {
             // Find parameter by ID
-            for (P.params) |param| {
-                const param_id = core.idHash(param.id());
+            for (P.params, 0..) |param, i| {
+                const param_id = param_ids[i];
                 if (param_id == id) {
                     return switch (param) {
                         .float => |p| p.range.unnormalize(@floatCast(value_normalized)),
@@ -262,8 +271,8 @@ pub fn Vst3Controller(comptime T: type) type {
             plain_value: vst3.types.ParamValue,
         ) callconv(.c) vst3.types.ParamValue {
             // Find parameter by ID
-            for (P.params) |param| {
-                const param_id = core.idHash(param.id());
+            for (P.params, 0..) |param, i| {
+                const param_id = param_ids[i];
                 if (param_id == id) {
                     return switch (param) {
                         .float => |p| p.range.normalize(@floatCast(plain_value)),
@@ -289,8 +298,8 @@ pub fn Vst3Controller(comptime T: type) type {
             
             if (controller.param_values) |param_values| {
                 // Find parameter by ID
-                for (P.params, 0..) |param, idx| {
-                    const param_id = core.idHash(param.id());
+                for (P.params, 0..) |_, idx| {
+                    const param_id = param_ids[idx];
                     if (param_id == id) {
                         return param_values.get(idx);
                     }
@@ -309,8 +318,8 @@ pub fn Vst3Controller(comptime T: type) type {
             
             if (controller.param_values) |param_values| {
                 // Find parameter by ID
-                for (P.params, 0..) |param, idx| {
-                    const param_id = core.idHash(param.id());
+                for (P.params, 0..) |_, idx| {
+                    const param_id = param_ids[idx];
                     if (param_id == id) {
                         param_values.set(idx, @floatCast(value));
                         return vst3.types.kResultOk;

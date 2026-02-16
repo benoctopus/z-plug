@@ -12,6 +12,15 @@ const extensions = @import("extensions.zig");
 pub fn PluginWrapper(comptime T: type) type {
     const P = core.Plugin(T);
     
+    // Pre-compute parameter IDs at comptime
+    const param_ids = comptime blk: {
+        var ids: [P.params.len]u32 = undefined;
+        for (P.params, 0..) |param, i| {
+            ids[i] = core.idHash(param.id());
+        }
+        break :blk ids;
+    };
+    
     return struct {
         const Self = @This();
         
@@ -458,8 +467,8 @@ pub fn PluginWrapper(comptime T: type) type {
                     const event: *const clap.events.ParamValue = @ptrCast(@alignCast(header));
                     // Find parameter index by ID
                     for (P.params, 0..) |param, idx| {
-                        const param_id = core.idHash(param.id());
-                        if (param_id == event.param_id) {
+                        const param_id = param_ids[idx];
+                        if (param_id == @intFromEnum(event.param_id)) {
                             // Convert plain value to normalized
                             const normalized = switch (param) {
                                 .float => |p| p.range.normalize(@floatCast(event.value)),
