@@ -184,6 +184,7 @@ pub const EventOutputList = struct {
 /// - `reset: fn(*T) void` (default: no-op)
 /// - `save: fn(*T, SaveContext) bool` (default: no-op returning true)
 /// - `load: fn(*T, LoadContext) bool` (default: no-op returning true)
+/// - `state_version: u32` (default: 1)
 pub fn Plugin(comptime T: type) type {
     // Validate metadata fields
     if (!@hasDecl(T, "name")) {
@@ -279,6 +280,11 @@ pub fn Plugin(comptime T: type) type {
         /// When true, the wrapper will split process buffers at parameter change points.
         /// When false (default), parameter changes apply at the start of each block.
         pub const sample_accurate_automation = if (@hasDecl(T, "sample_accurate_automation")) T.sample_accurate_automation else false;
+        
+        /// State format version used for save/load.
+        /// This allows plugins to evolve their state format over time.
+        /// Defaults to 1 if not declared by the plugin.
+        pub const state_version = if (@hasDecl(T, "state_version")) T.state_version else 1;
 
         // Optional callbacks
         pub const has_reset = @hasDecl(T, "reset");

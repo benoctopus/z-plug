@@ -49,6 +49,8 @@ pub const Transport = @import("core/audio_layout.zig").Transport;
 pub const SaveContext = @import("core/state.zig").SaveContext;
 pub const LoadContext = @import("core/state.zig").LoadContext;
 pub const StateVersion = @import("core/state.zig").StateVersion;
+pub const writeHeader = @import("core/state.zig").writeHeader;
+pub const readHeader = @import("core/state.zig").readHeader;
 
 // Format wrappers
 pub const ClapEntry = @import("wrappers/clap/entry.zig").ClapEntry;

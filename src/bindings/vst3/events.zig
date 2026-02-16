@@ -64,6 +64,23 @@ pub const PolyPressureEvent = extern struct {
     note_id: i32,
 };
 
+/// Note expression type IDs
+pub const NoteExpressionTypeIDs = enum(u32) {
+    kVolumeTypeID = 0,
+    kPanTypeID = 1,
+    kTuningTypeID = 2,
+    kVibratoTypeID = 3,
+    kExpressionTypeID = 4,
+    kBrightnessTypeID = 5,
+};
+
+/// Note expression value event
+pub const NoteExpressionValueEvent = extern struct {
+    type_id: u32,
+    note_id: i32,
+    value: f64,
+};
+
 /// Generic event structure
 pub const Event = extern struct {
     bus_index: i32,
@@ -76,6 +93,7 @@ pub const Event = extern struct {
         note_off: NoteOffEvent,
         data: DataEvent,
         poly_pressure: PolyPressureEvent,
+        note_expression_value: NoteExpressionValueEvent,
     },
 };
 

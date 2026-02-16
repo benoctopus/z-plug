@@ -481,6 +481,83 @@ pub fn PluginWrapper(comptime T: type) type {
                     }
                     return false; // Don't add to event list
                 },
+                .note_expression => {
+                    const event: *const clap.events.NoteExpression = @ptrCast(@alignCast(header));
+                    
+                    const poly_data = core.PolyValueData{
+                        .timing = header.sample_offset,
+                        .voice_id = if (event.note_id == .unspecified) null else @intFromEnum(event.note_id),
+                        .channel = @intCast(@intFromEnum(event.channel)),
+                        .note = @intCast(@intFromEnum(event.key)),
+                        .value = @floatCast(event.value),
+                    };
+                    
+                    out.* = switch (event.expression_id) {
+                        .pressure => core.NoteEvent{ .poly_pressure = poly_data },
+                        .tuning => core.NoteEvent{ .poly_tuning = poly_data },
+                        .vibrato => core.NoteEvent{ .poly_vibrato = poly_data },
+                        .expression => core.NoteEvent{ .poly_expression = poly_data },
+                        .brightness => core.NoteEvent{ .poly_brightness = poly_data },
+                        .volume => core.NoteEvent{ .poly_volume = poly_data },
+                        .pan => core.NoteEvent{ .poly_pan = poly_data },
+                    };
+                    return true;
+                },
+                .midi => {
+                    const event: *const clap.events.Midi = @ptrCast(@alignCast(header));
+                    const status = event.data[0] & 0xF0;
+                    const channel: u8 = @intCast(event.data[0] & 0x0F);
+                    
+                    switch (status) {
+                        0xB0 => { // Control Change
+                            out.* = core.NoteEvent{
+                                .midi_cc = .{
+                                    .timing = header.sample_offset,
+                                    .channel = channel,
+                                    .cc = event.data[1],
+                                    .value = @as(f32, @floatFromInt(event.data[2])) / 127.0,
+                                },
+                            };
+                            return true;
+                        },
+                        0xD0 => { // Channel Pressure
+                            out.* = core.NoteEvent{
+                                .midi_channel_pressure = .{
+                                    .timing = header.sample_offset,
+                                    .channel = channel,
+                                    .value = @as(f32, @floatFromInt(event.data[1])) / 127.0,
+                                },
+                            };
+                            return true;
+                        },
+                        0xE0 => { // Pitch Bend
+                            const lsb = event.data[1];
+                            const msb = event.data[2];
+                            const bend_value = (@as(i32, msb) << 7) | @as(i32, lsb);
+                            // Convert 0-16383 to -1.0 to +1.0
+                            const normalized = (@as(f32, @floatFromInt(bend_value)) - 8192.0) / 8192.0;
+                            out.* = core.NoteEvent{
+                                .midi_pitch_bend = .{
+                                    .timing = header.sample_offset,
+                                    .channel = channel,
+                                    .value = normalized,
+                                },
+                            };
+                            return true;
+                        },
+                        0xC0 => { // Program Change
+                            out.* = core.NoteEvent{
+                                .midi_program_change = .{
+                                    .timing = header.sample_offset,
+                                    .channel = channel,
+                                    .program = event.data[1],
+                                },
+                            };
+                            return true;
+                        },
+                        else => return false, // Unsupported MIDI message
+                    }
+                },
                 else => return false,
             }
         }
@@ -521,7 +598,244 @@ pub fn PluginWrapper(comptime T: type) type {
                     };
                     _ = out_events.tryPush(out_events, &clap_event.header);
                 },
-                else => {}, // TODO: Implement other event types
+                .choke => |data| {
+                    var clap_event = clap.events.Note{
+                        .header = .{
+                            .size = @sizeOf(clap.events.Note),
+                            .sample_offset = data.timing,
+                            .space_id = clap.events.core_space_id,
+                            .type = .note_choke,
+                            .flags = .{},
+                        },
+                        .note_id = if (data.voice_id) |id| @enumFromInt(id) else .unspecified,
+                        .port_index = @enumFromInt(0),
+                        .channel = @enumFromInt(data.channel),
+                        .key = @enumFromInt(data.note),
+                        .velocity = 0.0,
+                    };
+                    _ = out_events.tryPush(out_events, &clap_event.header);
+                },
+                .voice_terminated => |data| {
+                    var clap_event = clap.events.Note{
+                        .header = .{
+                            .size = @sizeOf(clap.events.Note),
+                            .sample_offset = data.timing,
+                            .space_id = clap.events.core_space_id,
+                            .type = .note_end,
+                            .flags = .{},
+                        },
+                        .note_id = if (data.voice_id) |id| @enumFromInt(id) else .unspecified,
+                        .port_index = @enumFromInt(0),
+                        .channel = @enumFromInt(data.channel),
+                        .key = @enumFromInt(data.note),
+                        .velocity = 0.0,
+                    };
+                    _ = out_events.tryPush(out_events, &clap_event.header);
+                },
+                .poly_pressure => |data| {
+                    var clap_event = clap.events.NoteExpression{
+                        .header = .{
+                            .size = @sizeOf(clap.events.NoteExpression),
+                            .sample_offset = data.timing,
+                            .space_id = clap.events.core_space_id,
+                            .type = .note_expression,
+                            .flags = .{},
+                        },
+                        .note_id = if (data.voice_id) |id| @enumFromInt(id) else .unspecified,
+                        .port_index = @enumFromInt(0),
+                        .channel = @enumFromInt(data.channel),
+                        .key = @enumFromInt(data.note),
+                        .expression_id = .pressure,
+                        .value = data.value,
+                    };
+                    _ = out_events.tryPush(out_events, &clap_event.header);
+                },
+                .poly_tuning => |data| {
+                    var clap_event = clap.events.NoteExpression{
+                        .header = .{
+                            .size = @sizeOf(clap.events.NoteExpression),
+                            .sample_offset = data.timing,
+                            .space_id = clap.events.core_space_id,
+                            .type = .note_expression,
+                            .flags = .{},
+                        },
+                        .note_id = if (data.voice_id) |id| @enumFromInt(id) else .unspecified,
+                        .port_index = @enumFromInt(0),
+                        .channel = @enumFromInt(data.channel),
+                        .key = @enumFromInt(data.note),
+                        .expression_id = .tuning,
+                        .value = data.value,
+                    };
+                    _ = out_events.tryPush(out_events, &clap_event.header);
+                },
+                .poly_vibrato => |data| {
+                    var clap_event = clap.events.NoteExpression{
+                        .header = .{
+                            .size = @sizeOf(clap.events.NoteExpression),
+                            .sample_offset = data.timing,
+                            .space_id = clap.events.core_space_id,
+                            .type = .note_expression,
+                            .flags = .{},
+                        },
+                        .note_id = if (data.voice_id) |id| @enumFromInt(id) else .unspecified,
+                        .port_index = @enumFromInt(0),
+                        .channel = @enumFromInt(data.channel),
+                        .key = @enumFromInt(data.note),
+                        .expression_id = .vibrato,
+                        .value = data.value,
+                    };
+                    _ = out_events.tryPush(out_events, &clap_event.header);
+                },
+                .poly_expression => |data| {
+                    var clap_event = clap.events.NoteExpression{
+                        .header = .{
+                            .size = @sizeOf(clap.events.NoteExpression),
+                            .sample_offset = data.timing,
+                            .space_id = clap.events.core_space_id,
+                            .type = .note_expression,
+                            .flags = .{},
+                        },
+                        .note_id = if (data.voice_id) |id| @enumFromInt(id) else .unspecified,
+                        .port_index = @enumFromInt(0),
+                        .channel = @enumFromInt(data.channel),
+                        .key = @enumFromInt(data.note),
+                        .expression_id = .expression,
+                        .value = data.value,
+                    };
+                    _ = out_events.tryPush(out_events, &clap_event.header);
+                },
+                .poly_brightness => |data| {
+                    var clap_event = clap.events.NoteExpression{
+                        .header = .{
+                            .size = @sizeOf(clap.events.NoteExpression),
+                            .sample_offset = data.timing,
+                            .space_id = clap.events.core_space_id,
+                            .type = .note_expression,
+                            .flags = .{},
+                        },
+                        .note_id = if (data.voice_id) |id| @enumFromInt(id) else .unspecified,
+                        .port_index = @enumFromInt(0),
+                        .channel = @enumFromInt(data.channel),
+                        .key = @enumFromInt(data.note),
+                        .expression_id = .brightness,
+                        .value = data.value,
+                    };
+                    _ = out_events.tryPush(out_events, &clap_event.header);
+                },
+                .poly_volume => |data| {
+                    var clap_event = clap.events.NoteExpression{
+                        .header = .{
+                            .size = @sizeOf(clap.events.NoteExpression),
+                            .sample_offset = data.timing,
+                            .space_id = clap.events.core_space_id,
+                            .type = .note_expression,
+                            .flags = .{},
+                        },
+                        .note_id = if (data.voice_id) |id| @enumFromInt(id) else .unspecified,
+                        .port_index = @enumFromInt(0),
+                        .channel = @enumFromInt(data.channel),
+                        .key = @enumFromInt(data.note),
+                        .expression_id = .volume,
+                        .value = data.value,
+                    };
+                    _ = out_events.tryPush(out_events, &clap_event.header);
+                },
+                .poly_pan => |data| {
+                    var clap_event = clap.events.NoteExpression{
+                        .header = .{
+                            .size = @sizeOf(clap.events.NoteExpression),
+                            .sample_offset = data.timing,
+                            .space_id = clap.events.core_space_id,
+                            .type = .note_expression,
+                            .flags = .{},
+                        },
+                        .note_id = if (data.voice_id) |id| @enumFromInt(id) else .unspecified,
+                        .port_index = @enumFromInt(0),
+                        .channel = @enumFromInt(data.channel),
+                        .key = @enumFromInt(data.note),
+                        .expression_id = .pan,
+                        .value = data.value,
+                    };
+                    _ = out_events.tryPush(out_events, &clap_event.header);
+                },
+                .midi_cc => |data| {
+                    var clap_event = clap.events.Midi{
+                        .header = .{
+                            .size = @sizeOf(clap.events.Midi),
+                            .sample_offset = data.timing,
+                            .space_id = clap.events.core_space_id,
+                            .type = .midi,
+                            .flags = .{},
+                        },
+                        .port_index = 0,
+                        .data = .{
+                            0xB0 | data.channel, // Control Change + channel
+                            data.cc,
+                            @intFromFloat(@min(@max(data.value * 127.0, 0.0), 127.0)),
+                        },
+                    };
+                    _ = out_events.tryPush(out_events, &clap_event.header);
+                },
+                .midi_channel_pressure => |data| {
+                    var clap_event = clap.events.Midi{
+                        .header = .{
+                            .size = @sizeOf(clap.events.Midi),
+                            .sample_offset = data.timing,
+                            .space_id = clap.events.core_space_id,
+                            .type = .midi,
+                            .flags = .{},
+                        },
+                        .port_index = 0,
+                        .data = .{
+                            0xD0 | data.channel, // Channel Pressure + channel
+                            @intFromFloat(@min(@max(data.value * 127.0, 0.0), 127.0)),
+                            0,
+                        },
+                    };
+                    _ = out_events.tryPush(out_events, &clap_event.header);
+                },
+                .midi_pitch_bend => |data| {
+                    // Convert -1.0 to +1.0 back to 0-16383
+                    const bend_int = @as(i32, @intFromFloat((data.value + 1.0) * 8192.0));
+                    const clamped = @min(@max(bend_int, 0), 16383);
+                    const lsb: u8 = @intCast(clamped & 0x7F);
+                    const msb: u8 = @intCast((clamped >> 7) & 0x7F);
+                    
+                    var clap_event = clap.events.Midi{
+                        .header = .{
+                            .size = @sizeOf(clap.events.Midi),
+                            .sample_offset = data.timing,
+                            .space_id = clap.events.core_space_id,
+                            .type = .midi,
+                            .flags = .{},
+                        },
+                        .port_index = 0,
+                        .data = .{
+                            0xE0 | data.channel, // Pitch Bend + channel
+                            lsb,
+                            msb,
+                        },
+                    };
+                    _ = out_events.tryPush(out_events, &clap_event.header);
+                },
+                .midi_program_change => |data| {
+                    var clap_event = clap.events.Midi{
+                        .header = .{
+                            .size = @sizeOf(clap.events.Midi),
+                            .sample_offset = data.timing,
+                            .space_id = clap.events.core_space_id,
+                            .type = .midi,
+                            .flags = .{},
+                        },
+                        .port_index = 0,
+                        .data = .{
+                            0xC0 | data.channel, // Program Change + channel
+                            data.program,
+                            0,
+                        },
+                    };
+                    _ = out_events.tryPush(out_events, &clap_event.header);
+                },
             }
         }
     };

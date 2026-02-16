@@ -354,9 +354,26 @@ pub fn Vst3Component(comptime T: type) type {
                 .readFn = Reader.read,
             };
             
+            // Read state header
+            const version = core.readHeader(any_reader) catch return vst3.types.kResultFalse;
+            
+            // Read parameter values
+            for (0..P.params.len) |i| {
+                var normalized: f32 = undefined;
+                const bytes = std.mem.asBytes(&normalized);
+                const read_count = any_reader.readAll(bytes) catch return vst3.types.kResultFalse;
+                if (read_count != @sizeOf(f32)) return vst3.types.kResultFalse;
+                wrapper.param_values.set(i, normalized);
+                
+                // Update smoother target
+                const param = P.params[i];
+                const plain_value = param.toPlain(normalized);
+                wrapper.smoother_bank.setTarget(i, wrapper.buffer_config.sample_rate, plain_value);
+            }
+            
             const load_context = core.LoadContext{
                 .reader = any_reader,
-                .version = 1,
+                .version = version,
             };
             
             const success = P.load(&wrapper.plugin, load_context);
@@ -390,6 +407,16 @@ pub fn Vst3Component(comptime T: type) type {
                 .context = @ptrCast(&writer_ctx),
                 .writeFn = Writer.write,
             };
+            
+            // Write state header
+            core.writeHeader(any_writer, P.state_version) catch return vst3.types.kResultFalse;
+            
+            // Write parameter values
+            for (0..P.params.len) |i| {
+                const normalized = wrapper.param_values.get(i);
+                const bytes = std.mem.asBytes(&normalized);
+                any_writer.writeAll(bytes) catch return vst3.types.kResultFalse;
+            }
             
             const save_context = core.SaveContext{
                 .writer = any_writer,
@@ -468,6 +495,187 @@ pub fn Vst3Component(comptime T: type) type {
         
         fn setProcessing(_: *anyopaque, _: vst3.types.TBool) callconv(.c) vst3.tresult {
             return vst3.types.kResultOk;
+        }
+        
+        /// Translate a VST3 event to the framework's NoteEvent representation.
+        /// Returns true if the event was successfully translated.
+        fn translateVst3InputEvent(vst3_event: *const vst3.events.Event, out: *core.NoteEvent) bool {
+            const event_type: vst3.events.EventTypes = @enumFromInt(vst3_event.type);
+            
+            switch (event_type) {
+                .kNoteOnEvent => {
+                    const note_on = vst3_event.data.note_on;
+                    out.* = core.NoteEvent{
+                        .note_on = .{
+                            .timing = @intCast(vst3_event.sample_offset),
+                            .voice_id = if (note_on.note_id >= 0) @intCast(note_on.note_id) else null,
+                            .channel = @intCast(note_on.channel),
+                            .note = @intCast(note_on.pitch),
+                            .velocity = note_on.velocity,
+                        },
+                    };
+                    return true;
+                },
+                .kNoteOffEvent => {
+                    const note_off = vst3_event.data.note_off;
+                    out.* = core.NoteEvent{
+                        .note_off = .{
+                            .timing = @intCast(vst3_event.sample_offset),
+                            .voice_id = if (note_off.note_id >= 0) @intCast(note_off.note_id) else null,
+                            .channel = @intCast(note_off.channel),
+                            .note = @intCast(note_off.pitch),
+                            .velocity = note_off.velocity,
+                        },
+                    };
+                    return true;
+                },
+                .kPolyPressureEvent => {
+                    const poly_pressure = vst3_event.data.poly_pressure;
+                    out.* = core.NoteEvent{
+                        .poly_pressure = .{
+                            .timing = @intCast(vst3_event.sample_offset),
+                            .voice_id = if (poly_pressure.note_id >= 0) @intCast(poly_pressure.note_id) else null,
+                            .channel = @intCast(poly_pressure.channel),
+                            .note = @intCast(poly_pressure.pitch),
+                            .value = @floatCast(poly_pressure.pressure),
+                        },
+                    };
+                    return true;
+                },
+                .kNoteExpressionValueEvent => {
+                    const expr = vst3_event.data.note_expression_value;
+                    const type_id: vst3.events.NoteExpressionTypeIDs = @enumFromInt(expr.type_id);
+                    
+                    const poly_data = core.PolyValueData{
+                        .timing = @intCast(vst3_event.sample_offset),
+                        .voice_id = if (expr.note_id >= 0) @intCast(expr.note_id) else null,
+                        .channel = 0, // VST3 note expression doesn't have channel info
+                        .note = 0, // VST3 note expression doesn't have note info
+                        .value = @floatCast(expr.value),
+                    };
+                    
+                    out.* = switch (type_id) {
+                        .kVolumeTypeID => core.NoteEvent{ .poly_volume = poly_data },
+                        .kPanTypeID => core.NoteEvent{ .poly_pan = poly_data },
+                        .kTuningTypeID => core.NoteEvent{ .poly_tuning = poly_data },
+                        .kVibratoTypeID => core.NoteEvent{ .poly_vibrato = poly_data },
+                        .kExpressionTypeID => core.NoteEvent{ .poly_expression = poly_data },
+                        .kBrightnessTypeID => core.NoteEvent{ .poly_brightness = poly_data },
+                    };
+                    return true;
+                },
+                else => return false, // Unsupported event type
+            }
+        }
+        
+        /// Translate a framework NoteEvent to VST3 format.
+        /// Returns true if the event was successfully translated.
+        fn translateVst3OutputEvent(event: *const core.NoteEvent, out: *vst3.events.Event) bool {
+            out.bus_index = 0;
+            out.ppq_position = 0.0;
+            out.flags = 0;
+            
+            switch (event.*) {
+                .note_on => |data| {
+                    out.sample_offset = @intCast(data.timing);
+                    out.type = @intFromEnum(vst3.events.EventTypes.kNoteOnEvent);
+                    out.data.note_on = .{
+                        .channel = @intCast(data.channel),
+                        .pitch = @intCast(data.note),
+                        .tuning = 0.0,
+                        .velocity = data.velocity,
+                        .length = 0,
+                        .note_id = if (data.voice_id) |id| @intCast(id) else -1,
+                    };
+                    return true;
+                },
+                .note_off => |data| {
+                    out.sample_offset = @intCast(data.timing);
+                    out.type = @intFromEnum(vst3.events.EventTypes.kNoteOffEvent);
+                    out.data.note_off = .{
+                        .channel = @intCast(data.channel),
+                        .pitch = @intCast(data.note),
+                        .velocity = data.velocity,
+                        .note_id = if (data.voice_id) |id| @intCast(id) else -1,
+                        .tuning = 0.0,
+                    };
+                    return true;
+                },
+                .poly_pressure => |data| {
+                    out.sample_offset = @intCast(data.timing);
+                    out.type = @intFromEnum(vst3.events.EventTypes.kPolyPressureEvent);
+                    out.data.poly_pressure = .{
+                        .channel = @intCast(data.channel),
+                        .pitch = @intCast(data.note),
+                        .pressure = data.value,
+                        .note_id = if (data.voice_id) |id| @intCast(id) else -1,
+                    };
+                    return true;
+                },
+                .poly_volume => |data| {
+                    out.sample_offset = @intCast(data.timing);
+                    out.type = @intFromEnum(vst3.events.EventTypes.kNoteExpressionValueEvent);
+                    out.data.note_expression_value = .{
+                        .type_id = @intFromEnum(vst3.events.NoteExpressionTypeIDs.kVolumeTypeID),
+                        .note_id = if (data.voice_id) |id| @intCast(id) else -1,
+                        .value = data.value,
+                    };
+                    return true;
+                },
+                .poly_pan => |data| {
+                    out.sample_offset = @intCast(data.timing);
+                    out.type = @intFromEnum(vst3.events.EventTypes.kNoteExpressionValueEvent);
+                    out.data.note_expression_value = .{
+                        .type_id = @intFromEnum(vst3.events.NoteExpressionTypeIDs.kPanTypeID),
+                        .note_id = if (data.voice_id) |id| @intCast(id) else -1,
+                        .value = data.value,
+                    };
+                    return true;
+                },
+                .poly_tuning => |data| {
+                    out.sample_offset = @intCast(data.timing);
+                    out.type = @intFromEnum(vst3.events.EventTypes.kNoteExpressionValueEvent);
+                    out.data.note_expression_value = .{
+                        .type_id = @intFromEnum(vst3.events.NoteExpressionTypeIDs.kTuningTypeID),
+                        .note_id = if (data.voice_id) |id| @intCast(id) else -1,
+                        .value = data.value,
+                    };
+                    return true;
+                },
+                .poly_vibrato => |data| {
+                    out.sample_offset = @intCast(data.timing);
+                    out.type = @intFromEnum(vst3.events.EventTypes.kNoteExpressionValueEvent);
+                    out.data.note_expression_value = .{
+                        .type_id = @intFromEnum(vst3.events.NoteExpressionTypeIDs.kVibratoTypeID),
+                        .note_id = if (data.voice_id) |id| @intCast(id) else -1,
+                        .value = data.value,
+                    };
+                    return true;
+                },
+                .poly_expression => |data| {
+                    out.sample_offset = @intCast(data.timing);
+                    out.type = @intFromEnum(vst3.events.EventTypes.kNoteExpressionValueEvent);
+                    out.data.note_expression_value = .{
+                        .type_id = @intFromEnum(vst3.events.NoteExpressionTypeIDs.kExpressionTypeID),
+                        .note_id = if (data.voice_id) |id| @intCast(id) else -1,
+                        .value = data.value,
+                    };
+                    return true;
+                },
+                .poly_brightness => |data| {
+                    out.sample_offset = @intCast(data.timing);
+                    out.type = @intFromEnum(vst3.events.EventTypes.kNoteExpressionValueEvent);
+                    out.data.note_expression_value = .{
+                        .type_id = @intFromEnum(vst3.events.NoteExpressionTypeIDs.kBrightnessTypeID),
+                        .note_id = if (data.voice_id) |id| @intCast(id) else -1,
+                        .value = data.value,
+                    };
+                    return true;
+                },
+                // VST3 doesn't have direct equivalents for choke, voice_terminated, and MIDI messages
+                // These would need to be handled at a higher level or ignored
+                else => return false,
+            }
         }
         
         fn process(self: *anyopaque, data: *vst3.processor.ProcessData) callconv(.c) vst3.tresult {
@@ -585,8 +793,22 @@ pub fn Vst3Component(comptime T: type) type {
                 .outputs = wrapper.aux_output_buffers[0..aux_output_count],
             };
             
-            // Translate input events (TODO: implement full event translation)
-            const input_event_count: usize = 0;
+            // Translate input events from IEventList
+            var input_event_count: usize = 0;
+            if (data.input_events) |event_list| {
+                const event_vtbl: *const vst3.events.IEventListVtbl = @ptrCast(@alignCast(event_list.lpVtbl));
+                const count = event_vtbl.getEventCount(event_list);
+                
+                var i: i32 = 0;
+                while (i < count and input_event_count < wrapper.input_events_storage.len) : (i += 1) {
+                    var vst3_event: vst3.events.Event = undefined;
+                    if (event_vtbl.getEvent(event_list, i, &vst3_event) == vst3.types.kResultOk) {
+                        if (translateVst3InputEvent(&vst3_event, &wrapper.input_events_storage[input_event_count])) {
+                            input_event_count += 1;
+                        }
+                    }
+                }
+            }
             
             // Process parameter changes from IParameterChanges
             // TODO: Sample-accurate automation (P.sample_accurate_automation)
@@ -672,6 +894,17 @@ pub fn Vst3Component(comptime T: type) type {
             
             // Call plugin process
             const status = P.process(&wrapper.plugin, &buffer, &aux, &context);
+            
+            // Translate output events back to VST3 format
+            if (data.output_events) |output_event_list| {
+                for (wrapper.event_output_list.slice()) |*event| {
+                    var vst3_event: vst3.events.Event = undefined;
+                    if (translateVst3OutputEvent(event, &vst3_event)) {
+                        const event_vtbl: *const vst3.events.IEventListVtbl = @ptrCast(@alignCast(output_event_list.lpVtbl));
+                        _ = event_vtbl.addEvent(output_event_list, &vst3_event);
+                    }
+                }
+            }
             
             // Map ProcessStatus to result
             return switch (status) {

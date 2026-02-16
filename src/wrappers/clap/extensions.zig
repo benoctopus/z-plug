@@ -383,6 +383,16 @@ pub fn Extensions(comptime T: type) type {
                 .writeFn = Writer.write,
             };
             
+            // Write state header
+            core.writeHeader(any_writer, P.state_version) catch return false;
+            
+            // Write parameter values
+            for (0..P.params.len) |i| {
+                const normalized = self.param_values.get(i);
+                const bytes = std.mem.asBytes(&normalized);
+                any_writer.writeAll(bytes) catch return false;
+            }
+            
             const save_context = core.SaveContext{
                 .writer = any_writer,
             };
@@ -417,9 +427,26 @@ pub fn Extensions(comptime T: type) type {
                 .readFn = Reader.read,
             };
             
+            // Read state header
+            const version = core.readHeader(any_reader) catch return false;
+            
+            // Read parameter values
+            for (0..P.params.len) |i| {
+                var normalized: f32 = undefined;
+                const bytes = std.mem.asBytes(&normalized);
+                const read_count = any_reader.readAll(bytes) catch return false;
+                if (read_count != @sizeOf(f32)) return false;
+                self.param_values.set(i, normalized);
+                
+                // Update smoother target
+                const param = P.params[i];
+                const plain_value = param.toPlain(normalized);
+                self.smoother_bank.setTarget(i, self.buffer_config.sample_rate, plain_value);
+            }
+            
             const load_context = core.LoadContext{
                 .reader = any_reader,
-                .version = 1, // Default version
+                .version = version,
             };
             
             return P.load(&self.plugin, load_context);
