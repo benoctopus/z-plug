@@ -395,5 +395,4 @@ pub const GainPlugin = struct {
 
 - **Architecture details:** See [docs/architecture.md](architecture.md)
 - **Module internals:** See `src/*/README.md` files
-- **Design rationale:** See [zig-plug-design.md](../zig-plug-design.md)
 - **Coding standards:** See [AGENTS.md](../AGENTS.md)

@@ -198,7 +198,7 @@ Topic-based guides for contributors and plugin authors:
 - **`docs/getting-started.md`** — Development environment setup, building, running tests, project structure
 - **`docs/plugin-authors.md`** — Public API guide for writing plugins (examples, parameter system, buffer access, events, state)
 
-These docs provide practical guidance and reference `zig-plug-design.md` for deep design rationale rather than duplicating it.
+These docs provide practical guidance for contributors and plugin authors.
 
 ### Module-Level Documentation (per-module `README.md`)
 
@@ -243,12 +243,11 @@ Module READMEs are short (1–2 screenfulls), describing what the module does, i
 
 When implementing, consult these resources:
 
-- **nih-plug Plugin trait**: Primary architecture reference for the plugin interface (`src/plugin.rs`). 
-- nih-plug's source is included in this project at ./nih-plug/ for easy reference.
+- **[nih-plug](https://github.com/robbert-vdh/nih-plug) Plugin trait**: Primary architecture reference for the plugin interface ([`src/plugin.rs`](https://github.com/robbert-vdh/nih-plug/blob/master/src/plugin.rs)).
 - **SuperElectric blog**: Worked example of VST3 COM vtables in Zig with comptime metaprogramming.
 - **Nakst CLAP tutorials**: Step-by-step C implementation of CLAP plugins (parts 1 and 2).
 - **arbor (Zig)**: Existing Zig plugin framework for comptime parameter patterns and build system reference.
 - **`vst3_c_api` headers**: The ground truth for VST3 C struct layouts.
 - **CLAP headers (`free-audio/clap`)**: The ground truth for CLAP struct definitions.
 
-See `zig-plug-design.md` for full URLs and detailed design rationale.
+See the [nih-plug repo](https://github.com/robbert-vdh/nih-plug) and [docs/architecture.md](docs/architecture.md) for additional design context.

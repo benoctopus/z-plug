@@ -10,8 +10,6 @@ Inspired by [nih-plug](https://github.com/robbert-vdh/nih-plug) (Rust), z-plug p
 - **Real-time safety** — No allocations on the audio thread by design
 - **Minimal magic** — Explicit over implicit, minimal ceremony
 
-See [zig-plug-design.md](zig-plug-design.md) for the complete design document.
-
 ## Project Status
 
 ✅ **Phase 1: Foundations** — Complete
@@ -88,7 +86,6 @@ This project's framework code is licensed under [TBD].
 ### For Contributors
 - **[docs/architecture.md](docs/architecture.md)** — How the layers fit together
 - **[AGENTS.md](AGENTS.md)** — Coding standards and architecture rules
-- **[zig-plug-design.md](zig-plug-design.md)** — Complete design document with rationale
 - **Module READMEs** — See `src/*/README.md` for module-specific docs
 
 ## Contributing

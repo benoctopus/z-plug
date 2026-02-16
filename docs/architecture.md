@@ -1,6 +1,6 @@
 # Architecture
 
-This document provides a practical overview of how zig-plug's components fit together. For the complete design rationale, see [zig-plug-design.md](../zig-plug-design.md).
+This document provides a practical overview of how zig-plug's components fit together.
 
 ## Four-Layer Design
 

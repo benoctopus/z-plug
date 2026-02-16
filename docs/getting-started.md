@@ -17,15 +17,7 @@ git clone <repository-url>
 cd z-plug
 ```
 
-### 2. Initialize submodules
-
-The nih-plug Rust source is included as a reference:
-
-```bash
-git submodule update --init --recursive
-```
-
-### 3. Activate the Zig 0.15.2 environment
+### 2. Activate the Zig 0.15.2 environment
 
 This project uses Nix with direnv to provide Zig 0.15.2. The system-installed Zig (via Homebrew or other package managers) may be an older version like 0.13.0.
 
@@ -114,7 +106,6 @@ z-plug/
 ├── build.zig.zon                  # Package manifest
 ├── flake.nix                      # Nix development environment
 ├── AGENTS.md                      # Coding guidelines for AI agents
-├── zig-plug-design.md             # Complete design document
 └── README.md                      # Project overview
 ```
 
@@ -124,13 +115,12 @@ z-plug/
 
 - **[docs/architecture.md](architecture.md)** — How the layers fit together
 - **[docs/plugin-authors.md](plugin-authors.md)** — Writing plugins with zig-plug
-- **[zig-plug-design.md](../zig-plug-design.md)** — Complete design rationale and phased implementation plan
 - **[AGENTS.md](../AGENTS.md)** — Coding standards and architecture rules
 - **Module READMEs** — See `src/*/README.md` for module-specific docs
 
 ### External References
 
-- **[nih-plug](https://github.com/robbert-vdh/nih-plug)** — Primary architecture reference (Rust). Source included as submodule at `./nih-plug/`.
+- **[nih-plug](https://github.com/robbert-vdh/nih-plug)** — Primary architecture reference (Rust).
 - **[CLAP spec](https://github.com/free-audio/clap)** — Official CLAP headers and documentation
 - **[VST3 C API](https://github.com/steinbergmedia/vst3_c_api)** — Steinberg's official C API for VST3
 - **[SuperElectric blog](https://superelectric.dev/post/post1.html)** — VST3 COM vtables in Zig with comptime
@@ -162,4 +152,4 @@ When adding a new directory under `src/` (e.g., `src/wrappers/clap/`):
 - **Writing a plugin:** See [docs/plugin-authors.md](plugin-authors.md)
 - **Understanding the architecture:** See [docs/architecture.md](architecture.md)
 - **Contributing code:** See [AGENTS.md](../AGENTS.md)
-- **Design rationale:** See [zig-plug-design.md](../zig-plug-design.md)
+- **Design rationale:** See [docs/architecture.md](architecture.md)
