@@ -1,5 +1,93 @@
 const std = @import("std");
 
+/// Plugin format options.
+pub const PluginFormat = struct {
+    clap: bool = false,
+    vst3: bool = false,
+};
+
+/// Add a plugin build target.
+///
+/// This helper function creates shared library targets for the specified
+/// plugin formats (CLAP and/or VST3).
+pub fn addPlugin(
+    b: *std.Build,
+    options: struct {
+        name: []const u8,
+        root_source_file: std.Build.LazyPath,
+        target: std.Build.ResolvedTarget,
+        optimize: std.builtin.OptimizeMode,
+        formats: PluginFormat,
+    },
+) void {
+    // Get the z_plug module
+    const z_plug = b.modules.get("z_plug") orelse {
+        @panic("z_plug module not found. Make sure build() is called first.");
+    };
+    
+    // Build CLAP plugin
+    if (options.formats.clap) {
+        const clap_lib = b.addSharedLibrary(.{
+            .name = options.name,
+            .root_source_file = options.root_source_file,
+            .target = options.target,
+            .optimize = options.optimize,
+        });
+        
+        clap_lib.root_module.addImport("z_plug", z_plug);
+        
+        // Install as .clap
+        const install_clap = b.addInstallArtifact(clap_lib, .{
+            .dest_dir = .{ .override = .{ .custom = "plugins" } },
+        });
+        
+        // Rename to .clap extension
+        const clap_rename = b.addInstallFile(
+            clap_lib.getEmittedBin(),
+            b.fmt("plugins/{s}.clap", .{options.name}),
+        );
+        clap_rename.step.dependOn(&install_clap.step);
+        
+        b.getInstallStep().dependOn(&clap_rename.step);
+    }
+    
+    // Build VST3 plugin
+    if (options.formats.vst3) {
+        const vst3_lib = b.addSharedLibrary(.{
+            .name = options.name,
+            .root_source_file = options.root_source_file,
+            .target = options.target,
+            .optimize = options.optimize,
+        });
+        
+        vst3_lib.root_module.addImport("z_plug", z_plug);
+        
+        // Install as VST3 bundle
+        const target_info = options.target.result;
+        if (target_info.os.tag == .macos) {
+            // macOS bundle structure: MyPlugin.vst3/Contents/MacOS/MyPlugin
+            const bundle_dir = b.fmt("plugins/{s}.vst3/Contents/MacOS", .{options.name});
+            const install_vst3 = b.addInstallArtifact(vst3_lib, .{
+                .dest_dir = .{ .override = .{ .custom = bundle_dir } },
+            });
+            b.getInstallStep().dependOn(&install_vst3.step);
+        } else {
+            // Linux/Windows: just install as .vst3
+            const install_vst3 = b.addInstallArtifact(vst3_lib, .{
+                .dest_dir = .{ .override = .{ .custom = "plugins" } },
+            });
+            
+            const vst3_rename = b.addInstallFile(
+                vst3_lib.getEmittedBin(),
+                b.fmt("plugins/{s}.vst3", .{options.name}),
+            );
+            vst3_rename.step.dependOn(&install_vst3.step);
+            
+            b.getInstallStep().dependOn(&vst3_rename.step);
+        }
+    }
+}
+
 // Although this function looks imperative, it does not perform the build
 // directly and instead it mutates the build graph (`b`) that will be then
 // executed by an external runner. The functions in `std.Build` implement a DSL

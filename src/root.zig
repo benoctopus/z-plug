@@ -46,6 +46,10 @@ pub const SaveContext = @import("core/state.zig").SaveContext;
 pub const LoadContext = @import("core/state.zig").LoadContext;
 pub const StateVersion = @import("core/state.zig").StateVersion;
 
+// Format wrappers
+pub const ClapEntry = @import("wrappers/clap/entry.zig").ClapEntry;
+pub const Vst3Factory = @import("wrappers/vst3/factory.zig").Vst3Factory;
+
 test {
     // Ensure all core module tests are run.
     std.testing.refAllDecls(@import("core/audio_layout.zig"));
@@ -54,4 +58,8 @@ test {
     std.testing.refAllDecls(@import("core/params.zig"));
     std.testing.refAllDecls(@import("core/state.zig"));
     std.testing.refAllDecls(@import("core/plugin.zig"));
+    
+    // Wrapper tests
+    std.testing.refAllDecls(@import("wrappers/clap/entry.zig"));
+    std.testing.refAllDecls(@import("wrappers/vst3/factory.zig"));
 }
