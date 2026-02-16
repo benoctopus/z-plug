@@ -1,23 +1,57 @@
-//! By convention, root.zig is the root source file when making a library.
+/// Public API for plugin authors.
+///
+/// This module re-exports all core framework types that plugin authors need
+/// to implement audio plugins for both CLAP and VST3.
 const std = @import("std");
 
-pub fn bufferedPrint() !void {
-    // Stdout is for the actual output of your application, for example if you
-    // are implementing gzip, then only the compressed bytes should be sent to
-    // stdout, not any debugging messages.
-    var stdout_buffer: [1024]u8 = undefined;
-    var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
-    const stdout = &stdout_writer.interface;
+// Core plugin interface
+pub const Plugin = @import("core/plugin.zig").Plugin;
+pub const ProcessStatus = @import("core/plugin.zig").ProcessStatus;
+pub const ProcessContext = @import("core/plugin.zig").ProcessContext;
+pub const EventOutputList = @import("core/plugin.zig").EventOutputList;
 
-    try stdout.print("Run `zig build test` to run the tests.\n", .{});
+// Audio buffer types
+pub const Buffer = @import("core/buffer.zig").Buffer;
+pub const AuxBuffers = @import("core/buffer.zig").AuxBuffers;
 
-    try stdout.flush(); // Don't forget to flush!
-}
+// Note and MIDI events
+pub const NoteEvent = @import("core/events.zig").NoteEvent;
+pub const NoteData = @import("core/events.zig").NoteData;
+pub const PolyValueData = @import("core/events.zig").PolyValueData;
+pub const MidiCCData = @import("core/events.zig").MidiCCData;
+pub const MidiChannelData = @import("core/events.zig").MidiChannelData;
+pub const MidiProgramData = @import("core/events.zig").MidiProgramData;
 
-pub fn add(a: i32, b: i32) i32 {
-    return a + b;
-}
+// Parameter system
+pub const Param = @import("core/params.zig").Param;
+pub const FloatParam = @import("core/params.zig").FloatParam;
+pub const IntParam = @import("core/params.zig").IntParam;
+pub const BoolParam = @import("core/params.zig").BoolParam;
+pub const ChoiceParam = @import("core/params.zig").ChoiceParam;
+pub const FloatRange = @import("core/params.zig").FloatRange;
+pub const IntRange = @import("core/params.zig").IntRange;
+pub const ParamFlags = @import("core/params.zig").ParamFlags;
+pub const ParamValues = @import("core/params.zig").ParamValues;
+pub const idHash = @import("core/params.zig").idHash;
 
-test "basic add functionality" {
-    try std.testing.expect(add(3, 7) == 10);
+// Audio I/O layout and configuration
+pub const AudioIOLayout = @import("core/audio_layout.zig").AudioIOLayout;
+pub const BufferConfig = @import("core/audio_layout.zig").BufferConfig;
+pub const ProcessMode = @import("core/audio_layout.zig").ProcessMode;
+pub const MidiConfig = @import("core/audio_layout.zig").MidiConfig;
+pub const Transport = @import("core/audio_layout.zig").Transport;
+
+// State persistence
+pub const SaveContext = @import("core/state.zig").SaveContext;
+pub const LoadContext = @import("core/state.zig").LoadContext;
+pub const StateVersion = @import("core/state.zig").StateVersion;
+
+test {
+    // Ensure all core module tests are run.
+    std.testing.refAllDecls(@import("core/audio_layout.zig"));
+    std.testing.refAllDecls(@import("core/buffer.zig"));
+    std.testing.refAllDecls(@import("core/events.zig"));
+    std.testing.refAllDecls(@import("core/params.zig"));
+    std.testing.refAllDecls(@import("core/state.zig"));
+    std.testing.refAllDecls(@import("core/plugin.zig"));
 }
