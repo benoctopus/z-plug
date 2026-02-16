@@ -1,0 +1,16 @@
+/target
+/zig-out
+/.zig-cache
+
+/.direnv
+
+/dist
+
+.DS_Store
+*.log
+*.tmp
+*.bak
+*.swp
+*.swo
+
+

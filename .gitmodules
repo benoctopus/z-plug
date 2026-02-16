@@ -1,0 +1,6 @@
+[submodule "nih-plug"]
+	path = nih-plug
+	url = git@github.com:robbert-vdh/nih-plug.git
+[submodule "clap-zig-bindings"]
+	path = clap-zig-bindings
+	url = https://git.sr.ht/~interpunct/clap-zig-bindings
