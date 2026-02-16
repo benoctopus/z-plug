@@ -40,12 +40,39 @@ When adding code, place it in the correct layer. Never leak format-specific type
 
 ## Zig 0.15.2 Language Rules
 
+This project **REQUIRES Zig 0.15.2**. Do not use any other version of Zig.
+
+### Activating Zig 0.15.2
+
+The system-installed Zig (via Homebrew or other means) may be an older version like 0.13.0. This project uses **Nix with direnv** to provide the correct Zig 0.15.2 toolchain.
+
+**Before running any Zig commands, you MUST activate the development environment:**
+
+```bash
+# Allow direnv to load the .envrc file (first time only)
+direnv allow .
+
+# Activate the environment for the current shell session
+eval "$(direnv export bash)"
+
+# Verify you have Zig 0.15.2
+zig version  # Should output: 0.15.2
+```
+
+**When working in this project:**
+- Always run `eval "$(direnv export bash)"` at the start of your shell session
+- If `zig version` shows anything other than `0.15.2`, the environment is not active
+- All `zig build`, `zig test`, and `zig` commands must use the 0.15.2 toolchain
+
+### Zig 0.15.2 Language Features
+
 These are **mandatory** for all Zig code in this project:
 
 - **`callconv(.c)`** — Use lowercase `.c`, not the deprecated `.C`. All `extern struct` function pointer fields must have an explicit `callconv`.
-- **No `usingnamespace`** — It was removed. Use explicit `pub const` aliases or direct `@import`.
+- **No `usingnamespace`** — It was removed in 0.15. Use explicit `pub const` aliases or direct `@import`.
 - **No `async`/`await`** — Removed from the language. Not relevant for real-time audio anyway.
-- **New I/O interfaces** — Use `std.io.Reader` / `std.io.Writer` from 0.15.x, not the old interfaces. State save/load streams must use the new interfaces.
+- **New I/O interfaces** — Use `std.io.AnyReader` / `std.io.AnyWriter` from 0.15.2. The old `std.io.Reader` / `std.io.Writer` interface changed significantly. State save/load streams must use `std.io.AnyReader` and `std.io.AnyWriter`.
+- **Explicit string literal types** — String literals need explicit type annotations in struct declarations. Use `pub const name: [:0]const u8 = "value"` not `pub const name = "value"` when the type must be `[:0]const u8`.
 - **`@ptrCast` semantics** — Review 0.15 pointer cast semantics carefully when doing COM vtable pointer arithmetic. Prefer `@ptrCast` + `@alignCast` as separate explicit steps when needed.
 - **Explicit error unions** — Always handle errors explicitly. Never use `catch unreachable` unless you can prove the error is impossible.
 
