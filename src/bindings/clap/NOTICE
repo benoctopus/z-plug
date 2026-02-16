@@ -1,0 +1,11 @@
+// CLAP Zig Bindings
+// 
+// This code is derived from clap-zig-bindings:
+// https://git.sr.ht/~interpunct/clap-zig-bindings
+// 
+// Licensed under the GNU Lesser General Public License v3.0 or later.
+// See the LICENSE file in this directory for full license text.
+// 
+// Original Copyright: The clap-zig-bindings authors
+// Modifications: Adapted for Zig 0.15.2 compatibility
+

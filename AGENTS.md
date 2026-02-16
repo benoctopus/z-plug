@@ -4,6 +4,18 @@
 
 zig-plug is an audio plugin framework for Zig 0.15.2 that lets a plugin author write one Zig module and produce both **VST3** and **CLAP** binaries from the same source. The architecture is inspired by **nih-plug** (Rust): an API-agnostic `PluginInterface` with thin format-specific wrappers that translate between the internal interface and the external ABI.
 
+### License Compliance
+
+This project includes CLAP bindings that are licensed under the **GNU LGPL v3.0**:
+- Location: `src/bindings/clap/`
+- Original source: [clap-zig-bindings](https://git.sr.ht/~interpunct/clap-zig-bindings)
+- Modified for: Zig 0.15.2 compatibility
+- License file: `src/bindings/clap/LICENSE`
+
+When distributing binaries or using this framework, you must comply with LGPL v3 requirements, which means users must be able to replace the LGPL library. This is satisfied by either:
+1. Distributing source code (recommended for open source projects)
+2. Using dynamic linking for the CLAP bindings portion
+
 ## Core Design Principles
 
 These are non-negotiable. Every change must respect them:

@@ -21,24 +21,25 @@ pub fn build(b: *std.Build) void {
     // target and optimize options) will be listed when running `zig build --help`
     // in this directory.
 
-    // This creates a module, which represents a collection of source files alongside
-    // some compilation options, such as optimization mode and linked system libraries.
-    // Zig modules are the preferred way of making Zig code available to consumers.
-    // addModule defines a module that we intend to make available for importing
-    // to our consumers. We must give it a name because a Zig package can expose
-    // multiple modules and consumers will need to be able to specify which
-    // module they want to access.
-    const mod = b.addModule("z_plug", .{
-        // The root source file is the "entry point" of this module. Users of
-        // this module will only be able to access public declarations contained
-        // in this file, which means that if you have declarations that you
-        // intend to expose to consumers that were defined in other files part
-        // of this module, you will have to make sure to re-export them from
-        // the root file.
-        .root_source_file = b.path("src/root.zig"),
-        // Later on we'll use this module as the root module of a test executable
-        // which requires us to specify a target.
+    // Low-level bindings modules for CLAP and VST3
+    const clap_bindings = b.addModule("clap-bindings", .{
+        .root_source_file = b.path("src/bindings/clap/main.zig"),
         .target = target,
+    });
+
+    const vst3_bindings = b.addModule("vst3-bindings", .{
+        .root_source_file = b.path("src/bindings/vst3/root.zig"),
+        .target = target,
+    });
+
+    // Main framework module
+    const mod = b.addModule("z_plug", .{
+        .root_source_file = b.path("src/root.zig"),
+        .target = target,
+        .imports = &.{
+            .{ .name = "clap-bindings", .module = clap_bindings },
+            .{ .name = "vst3-bindings", .module = vst3_bindings },
+        },
     });
 
     // Here we define an executable. An executable needs to have a root module
@@ -122,8 +123,20 @@ pub fn build(b: *std.Build) void {
         .root_module = mod,
     });
 
+    // Test the CLAP bindings
+    const clap_tests = b.addTest(.{
+        .root_module = clap_bindings,
+    });
+
+    // Test the VST3 bindings
+    const vst3_tests = b.addTest(.{
+        .root_module = vst3_bindings,
+    });
+
     // A run step that will run the test executable.
     const run_mod_tests = b.addRunArtifact(mod_tests);
+    const run_clap_tests = b.addRunArtifact(clap_tests);
+    const run_vst3_tests = b.addRunArtifact(vst3_tests);
 
     // Creates an executable that will run `test` blocks from the executable's
     // root module. Note that test executables only test one module at a time,
@@ -140,6 +153,8 @@ pub fn build(b: *std.Build) void {
     // make the two of them run in parallel.
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_mod_tests.step);
+    test_step.dependOn(&run_clap_tests.step);
+    test_step.dependOn(&run_vst3_tests.step);
     test_step.dependOn(&run_exe_tests.step);
 
     // Just like flags, top level steps are also listed in the `--help` menu.
