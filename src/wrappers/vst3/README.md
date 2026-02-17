@@ -27,11 +27,16 @@ This module provides the VST3 (Virtual Studio Technology 3) wrapper that transla
 
 ## Design Notes
 
-- **COM lifetime**: Atomic reference counting, object freed when ref_count reaches zero
+- **COM lifetime**: Atomic reference counting with proper release-acquire memory ordering. `fetchSub` uses `.release` ordering, with an `.acquire` fence before destroy.
 - **Single-component model**: Same object implements processor and controller (simpler than split model)
 - **GUID generation**: Plugin ID string hashed to deterministic 16-byte TUID
-- **Zero-copy audio**: Channel pointers mapped directly from VST3 AudioBusBuffers to framework `Buffer`
-- **Parameter ID precomputation**: The wrapper precomputes all parameter IDs (hashes of string IDs) at comptime into a `param_ids` array, then uses array lookups instead of runtime calls to `core.idHash(param.id())`. This avoids comptime/runtime value resolution issues.
+- **Zero-copy audio**: Channel pointers mapped directly from VST3 AudioBusBuffers to framework `Buffer`. Auxiliary bus buffers also use zero-copy slice mapping.
+- **Shared utilities**: Uses `common.zig` for in-place buffer copy/zero-fill (`copyInPlace`), ProcessContext construction (`buildProcessContext`), and parameter normalization helpers
+- **O(log N) parameter lookup**: Uses `Plugin(T).findParamIndex()` for binary search on comptime-sorted parameter IDs, avoiding O(N) linear scans per parameter change event
+- **Parameter ID precomputation**: The wrapper precomputes all parameter IDs (hashes of string IDs) at comptime into a `param_ids` array, then uses array lookups instead of runtime calls to `core.idHash(param.id())`
+- **Cache-line optimization**: `Vst3Component` struct layout groups hot audio data first, `ref_count` on a separate cache line (`align(CACHE_LINE_SIZE)`), cold data (vtables, controller) last
+- **Event translation**: Uses `NoteEvent` factory functions (`noteOn()`, `noteOff()`, etc.) for uniform event construction from VST3 `IEventList`
+- **Safe COM thunks**: Processor thunks use `@fieldParentPtr` via `fromProcessor()` instead of manual `@offsetOf` arithmetic
 - **State persistence**: VST3 IBStream wrapped in `std.io.AnyWriter`/`AnyReader`
 - **Platform-specific exports**: The factory exports platform-specific module init/deinit functions at comptime:
   - macOS: `bundleEntry`, `bundleExit`

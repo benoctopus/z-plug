@@ -101,7 +101,7 @@ pub fn Extensions(comptime T: type) type {
             if (!is_input and P.midi_output == .none) return false;
 
             info.* = clap.ext.note_ports.Info{
-                .id = 0,
+                .id = @enumFromInt(0),
                 .supported_dialects = .{ .clap = true, .midi = true },
                 .preferred_dialect = .clap,
                 .name = undefined,

@@ -34,12 +34,15 @@ zig-plug follows a layered architecture inspired by [nih-plug](https://github.co
 - API-agnostic abstractions: `Plugin(T)`, `Buffer`, `NoteEvent`, `Param`, etc.
 - Comptime validation of plugin structs
 - Zero-copy buffer wrappers, lock-free parameter storage
+- Platform constants (`platform.zig`): cache line size, optimal SIMD vector length
+- Audio utilities (`util.zig`): dB/gain, MIDI/frequency, time conversions, denormal flushing
 - **No format-specific code allowed in this layer**
 
-**3. Format Wrappers** (`src/wrappers/clap/`, `src/wrappers/vst3/`)
+**3. Format Wrappers** (`src/wrappers/clap/`, `src/wrappers/vst3/`, `src/wrappers/common.zig`)
 - Translate between framework core and format-specific ABIs
 - CLAP wrapper: implements `clap_plugin` with function pointers
 - VST3 wrapper: implements COM interfaces (`IComponent`, `IAudioProcessor`, `IEditController`)
+- Shared utilities (`common.zig`): in-place buffer copy, ProcessContext construction, parameter normalization helpers
 - Handles format-specific lifecycle, parameter sync, event translation
 
 **4. Low-Level Bindings** (`src/bindings/clap/`, `src/bindings/vst3/`)
@@ -128,6 +131,18 @@ pub fn ParamValues(comptime N: usize) type {
 
 No locks are ever acquired on the audio thread. Main thread writes with `.store()`, audio thread reads with `.load()`.
 
+### O(log N) Parameter Lookup
+
+Parameter ID lookups use a comptime-generated binary search table on the `Plugin` type. Both wrappers call `P.findParamIndex()` for O(log N) lookups instead of linear scans, avoiding O(N*M) per process block when translating parameter change events.
+
+### Cache-Line Optimization
+
+Wrapper structs are laid out for CPU cache efficiency:
+- Hot audio data (buffers, parameter values) is grouped first
+- `ref_count` sits on a separate cache line (`align(CACHE_LINE_SIZE)`) to prevent false sharing
+- Cold data (vtables, controller state) is placed last
+- `SmootherBank` and `ParamValues` arrays are cache-line aligned
+
 ### Event Translation
 
 Both CLAP and VST3 have different event representations. The wrappers translate these to a unified `NoteEvent` tagged union before passing to the plugin:
@@ -135,13 +150,16 @@ Both CLAP and VST3 have different event representations. The wrappers translate 
 - CLAP events → `NoteEvent` (wrapper pre-sorts by timing)
 - VST3 `IEventList` → `NoteEvent` (wrapper iterates and translates)
 
+The `NoteEvent` type provides factory functions (`noteOn`, `noteOff`, `chokeNote`, `polyPressure`, `midiCC`, etc.) used by both wrappers to construct events uniformly, reducing code duplication.
+
 The plugin sees a simple `[]const NoteEvent` slice, agnostic of the underlying format.
 
 ## Module Relationships
 
-- `src/root.zig` re-exports types from `src/core/` for plugin authors
+- `src/root.zig` re-exports types from `src/core/` for plugin authors (including `platform` and `util`)
 - `src/core/` modules import each other (e.g., `plugin.zig` imports `buffer.zig`, `events.zig`, `params.zig`)
-- `src/wrappers/` imports both `src/core/` and `src/bindings/`
+- `src/wrappers/common.zig` provides shared utilities used by both CLAP and VST3 wrappers
+- `src/wrappers/` imports both `src/core/`, `src/wrappers/common.zig`, and `src/bindings/`
 - `src/bindings/` are standalone (only import `std`)
 
 See each module's `README.md` for detailed structure:

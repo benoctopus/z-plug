@@ -25,8 +25,11 @@ This module provides the CLAP (CLever Audio Plugin) wrapper that translates betw
 
 ## Design Notes
 
-- **Zero-copy audio**: Channel pointers are mapped directly from CLAP buffers to framework `Buffer`
-- **Event translation**: Events are translated from CLAP event types to the unified `NoteEvent` enum
-- **Parameter ID precomputation**: The wrapper precomputes all parameter IDs (hashes of string IDs) at comptime into a `param_ids` array, then uses array lookups instead of runtime calls to `core.idHash(param.id())`. This avoids comptime/runtime value resolution issues.
+- **Zero-copy audio**: Channel pointers are mapped directly from CLAP buffers to framework `Buffer`. Auxiliary bus buffers also use zero-copy slice mapping (no data copies).
+- **Event translation**: Events are translated from CLAP event types to the unified `NoteEvent` enum using factory functions (`NoteEvent.noteOn()`, etc.)
+- **Shared utilities**: Uses `common.zig` for in-place buffer copy/zero-fill (`copyInPlace`), ProcessContext construction (`buildProcessContext`), and parameter normalization helpers (`plainToNormalized`/`normalizedToPlain`)
+- **O(log N) parameter lookup**: Uses `Plugin(T).findParamIndex()` for binary search on comptime-sorted parameter IDs, avoiding O(N) linear scans per parameter change event
+- **Parameter ID precomputation**: The wrapper precomputes all parameter IDs (hashes of string IDs) at comptime into a `param_ids` array, then uses array lookups instead of runtime calls to `core.idHash(param.id())`
+- **Cache-line optimization**: `PluginWrapper` struct layout groups hot audio data first, with `param_values` cache-line aligned to prevent false sharing
 - **Atomic parameter storage**: `ParamValues` provides thread-safe access between main and audio threads
 - **State save/load**: Wraps CLAP streams in `std.io.AnyWriter`/`AnyReader`

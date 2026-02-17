@@ -63,31 +63,33 @@ Tests include:
 # Build all example plugins (outputs to zig-out/plugins/)
 zig build
 
-# The gain plugin produces:
-# - zig-out/plugins/ZigGain.clap (Linux/macOS) or ZigGain.clap.dll (Windows)
-# - zig-out/plugins/ZigGain.vst3/ (macOS bundle) or ZigGain.vst3 (Linux/Windows)
+# Produces both ZigGain and ZigSuperGain:
+# - zig-out/plugins/ZigGain.clap, ZigSuperGain.clap
+# - zig-out/plugins/ZigGain.vst3/, ZigSuperGain.vst3/
 ```
 
 ### Install plugins for DAW testing
 
-Use the provided helper scripts to install plugins to standard system directories:
+The build system includes install, sign, and uninstall steps:
 
 ```bash
-# Install plugins to user directories (recommended)
-./install_plugins.sh
+# Install plugins to user directories (automatically signs on macOS)
+zig build install-plugins
 
-# On macOS, plugins must be code-signed for most DAWs
-./sign_plugins.sh
+# Install to system directories (requires sudo, automatically signs on macOS)
+zig build install-plugins -Dsystem=true
+
+# Sign plugins without installing (macOS only, optional — install-plugins does this automatically)
+zig build sign-plugins
 
 # Uninstall plugins
-./uninstall_plugins.sh --dry-run  # preview what would be removed
-./uninstall_plugins.sh            # actually remove
+zig build uninstall-plugins
 ```
 
-The install script copies plugins to:
+Plugins are installed to:
 - **macOS**: `~/Library/Audio/Plug-Ins/CLAP/` and `~/Library/Audio/Plug-Ins/VST3/`
 - **Linux**: `~/.clap/` and `~/.vst3/`
-- **Windows**: `%LOCALAPPDATA%\Programs\Common\CLAP\` and `%LOCALAPPDATA%\Programs\Common\VST3\`
+- **Windows**: `%APPDATA%\CLAP\` and `%APPDATA%\VST3\`
 
 After installation, restart your DAW and rescan plugins.
 
@@ -102,7 +104,6 @@ z-plug/
 │
 ├── src/
 │   ├── root.zig                   # Public API re-exports
-│   ├── main.zig                   # Test executable entry point
 │   │
 │   ├── core/                      # Framework core (API-agnostic)
 │   │   ├── README.md              # Core module documentation
@@ -111,20 +112,23 @@ z-plug/
 │   │   ├── buffer.zig             # Audio buffer abstraction
 │   │   ├── events.zig             # Note/MIDI events
 │   │   ├── state.zig              # State persistence
-│   │   └── audio_layout.zig      # Audio I/O configuration
+│   │   ├── audio_layout.zig       # Audio I/O configuration
+│   │   ├── platform.zig           # Platform constants (cache line, SIMD vector size)
+│   │   └── util.zig               # Audio utilities (dB, MIDI, time, denormals)
 │   │
 │   ├── bindings/
-│   │   ├── clap/                  # CLAP C API bindings
+│   │   ├── clap/                  # CLAP C API bindings (LGPL v3)
 │   │   │   ├── README.md          # CLAP bindings docs
 │   │   │   ├── main.zig           # CLAP bindings root
 │   │   │   └── ... (40+ files)
 │   │   │
-│   │   └── vst3/                  # VST3 C API bindings
+│   │   └── vst3/                  # VST3 C API bindings (MIT)
 │   │       ├── README.md          # VST3 bindings docs
 │   │       ├── root.zig           # VST3 bindings root
 │   │       └── ... (~14 files)
 │   │
 │   └── wrappers/                  # Format-specific wrappers
+│       ├── common.zig             # Shared wrapper utilities
 │       ├── clap/                  # CLAP wrapper implementation
 │       │   ├── README.md          # CLAP wrapper docs
 │       │   ├── entry.zig          # clap_entry export
@@ -140,16 +144,15 @@ z-plug/
 │           └── com.zig            # COM helpers
 │
 ├── examples/                      # Example plugins
-│   └── gain.zig                   # Simple gain plugin (CLAP + VST3)
+│   ├── gain.zig                   # Minimal gain plugin (CLAP + VST3)
+│   └── super_gain.zig            # Feature showcase (SIMD, stereo width, etc.)
 │
-├── build.zig                      # Build system
+├── build.zig                      # Build system with addPlugin() helper
 ├── build.zig.zon                  # Package manifest
+├── build_tools/
+│   └── install_plugins.zig        # Install/sign/uninstall tool
 ├── flake.nix                      # Nix development environment
-├── install_plugins.sh             # Install plugins to system directories
-├── sign_plugins.sh                # Code-sign plugins on macOS
-├── uninstall_plugins.sh           # Remove installed plugins
 ├── AGENTS.md                      # Coding guidelines for AI agents
-├── zig-plug-design.md             # Complete design document
 └── README.md                      # Project overview
 ```
 

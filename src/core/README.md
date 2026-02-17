@@ -19,11 +19,13 @@ Plugin authors import these types via `@import("z_plug")`, which re-exports from
 | File | Purpose |
 |------|---------|
 | `plugin.zig` | Plugin interface, comptime validation, `ProcessContext`, `ProcessStatus`, `EventOutputList` |
-| `params.zig` | Parameter declarations (`Param`, `FloatParam`, `IntParam`, `BoolParam`, `ChoiceParam`), ranges, flags, atomic parameter storage |
+| `params.zig` | Parameter declarations (`Param`, `FloatParam`, `IntParam`, `BoolParam`, `ChoiceParam`), ranges (linear + logarithmic), flags, smoothing, atomic parameter storage |
 | `buffer.zig` | Zero-copy audio buffer abstraction with three iteration strategies |
-| `events.zig` | Unified `NoteEvent` tagged union (note on/off, poly expression, MIDI CC, etc.) |
+| `events.zig` | Unified `NoteEvent` tagged union with factory functions (note on/off, poly expression, MIDI CC, etc.) |
 | `state.zig` | State save/load interface (`SaveContext`, `LoadContext`) using Zig 0.15.2 I/O |
 | `audio_layout.zig` | Audio I/O layouts, buffer config, process modes, MIDI config, transport info |
+| `platform.zig` | Platform constants: `CACHE_LINE_SIZE`, `SIMD_VEC_LEN`, `F32xV` |
+| `util.zig` | Audio utilities: dB/gain conversions, MIDI note/frequency, time/sample conversions, pitch utilities, denormal flushing |
 
 ## Key Types
 
@@ -49,18 +51,36 @@ Plugin authors import these types via `@import("z_plug")`, which re-exports from
   - Poly expression: `poly_pressure`, `poly_tuning`, `poly_vibrato`, `poly_expression`, `poly_brightness`, `poly_volume`, `poly_pan`
   - MIDI: `midi_cc`, `midi_channel_pressure`, `midi_pitch_bend`, `midi_program_change`
 - All events carry sample-accurate `timing` (offset within buffer).
+- **Factory functions**: `noteOn()`, `noteOff()`, `chokeNote()`, `voiceTerminated()`, `polyPressure()`, `polyTuning()`, `polyVibrato()`, `polyExpression()`, `polyBrightness()`, `polyVolume()`, `polyPan()`, `midiCC()`, `midiChannelPressure()`, `midiPitchBend()`, `midiProgramChange()` — used by wrappers for uniform event construction.
 
 ### Parameters
 
 - **`Param`** — Tagged union for parameter declarations: `float`, `int`, `boolean`, `choice`.
-- **`FloatRange` / `IntRange`** — Value ranges with normalize/unnormalize/clamp methods.
+- **`FloatRange`** — Linear value range with normalize/unnormalize/clamp methods.
+- **`LogFloatRange`** — Logarithmic value range for perceptually uniform parameters (frequency, gain). Normalizes/unnormalizes in log space.
+- **`IntRange`** — Discrete integer range with normalize/unnormalize/clamp/stepCount methods.
+- **`FloatParam.range`** — Tagged union: `.linear` (FloatRange) or `.logarithmic` (LogFloatRange).
 - **`ParamFlags`** — Packed struct controlling automation, modulation, visibility, bypass.
-- **`ParamValues(comptime N)`** — Lock-free atomic storage for runtime parameter values. Uses `std.atomic.Value(f32)` for thread-safe access between main and audio threads.
-- **`SmoothingStyle`** — Tagged union for parameter smoothing: `.linear` (ms), `.exponential` (ms), `.none`.
-- **`Smoother`** — Single-parameter smoother with configurable style and step rate.
-- **`SmootherBank(comptime N)`** — Collection of N smoothers for plugin parameters.
+- **`ParamValues(comptime N)`** — Lock-free atomic storage for runtime parameter values. Uses `std.atomic.Value(f32)` for thread-safe access between main and audio threads. Cache-line aligned for performance.
+- **`SmoothingStyle`** — Tagged union for parameter smoothing: `.linear` (ms), `.exponential` (ms), `.logarithmic` (ms), `.none`.
+- **`Smoother`** — Single-parameter smoother with configurable style and step rate. Hot-path methods are inlined.
+- **`SmootherBank(comptime N)`** — Collection of N smoothers for plugin parameters. Cache-line aligned.
 - **`ParamAccess`** — Helper for accessing parameter values in the audio thread.
 - **`idHash(comptime id)`** — Stable FNV-1a hash for generating VST3 `ParamID` from string IDs.
+
+### Platform
+
+- **`CACHE_LINE_SIZE`** — L2 cache line size: 128 bytes on aarch64 (Apple Silicon), 64 bytes on x86_64.
+- **`SIMD_VEC_LEN`** — Optimal SIMD vector length for f32 (uses `std.simd.suggestVectorLength`).
+- **`F32xV`** — Platform-optimal `@Vector(SIMD_VEC_LEN, f32)` type.
+
+### Utilities
+
+- **dB/gain**: `dbToGain()`, `dbToGainFast()`, `gainToDb()`, `gainToDbFast()` with -100 dB floor clamping.
+- **MIDI/frequency**: `midiNoteToFreq()`, `midiNoteToFreqF32()`, `freqToMidiNote()`, `note_names` array.
+- **Time**: `msToSamples()`, `samplesToMs()`, `bpmToHz()`, `hzToBpm()`.
+- **Pitch**: `semitonesToRatio()`, `ratioToSemitones()`.
+- **Denormal flushing**: `FloatMode`, `enableFlushToZero()`, `restoreFloatMode()` — platform-specific (aarch64 FPCR, x86_64 MXCSR).
 
 ### State Persistence
 
@@ -125,11 +145,12 @@ Wrappers populate `channel_data` with pointers from format-specific structures (
 
 Each file includes test blocks at the bottom covering:
 - `audio_layout.zig`: Layout constants, total channel calculations
-- `events.zig`: Helper methods (timing, channel, voiceId extraction)
-- `params.zig`: Range normalize/unnormalize roundtrips, idHash stability, ParamValues atomic access
+- `events.zig`: Helper methods (timing, channel, voiceId extraction), factory functions
+- `params.zig`: Range normalize/unnormalize roundtrips (linear + logarithmic), idHash stability, ParamValues atomic access, smoother bank, parameter access
 - `buffer.zig`: Iteration strategies, zero-copy pointer identity
 - `state.zig`: SaveContext/LoadContext roundtrips, header validation
 - `plugin.zig`: Comptime validation with valid and invalid plugin structs
+- `util.zig`: dB/gain conversions, MIDI note/frequency roundtrips, time conversions, pitch utilities
 
 Run tests with:
 ```bash

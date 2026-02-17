@@ -335,14 +335,13 @@ for (context.input_events) |event| {
 
 ```zig
 // Voice finished naturally, send note-off to host
-const event = z_plug.NoteEvent{ .voice_terminated = .{
-    .timing = sample_offset,
-    .voice_id = voice_id,
-    .channel = 0,
-    .note = 60,
-    .velocity = 0.0,
-}};
+// NoteEvent provides factory functions for all event types:
+const event = z_plug.NoteEvent.voiceTerminated(sample_offset, voice_id, 0, 60, 0.0);
 _ = context.output_events.push(event);
+
+// Other factory functions: noteOn, noteOff, chokeNote, polyPressure,
+// polyTuning, polyVibrato, polyExpression, polyBrightness, polyVolume,
+// polyPan, midiCC, midiChannelPressure, midiPitchBend, midiProgramChange
 ```
 
 ### ProcessStatus
@@ -424,6 +423,53 @@ pub const midi_input = z_plug.MidiConfig.midi_cc;    // Also MIDI CC/pitch bend
 pub const midi_output = z_plug.MidiConfig.basic;     // Send note events to host
 ```
 
+## Audio Utilities
+
+The `z_plug.util` module provides common DSP utility functions:
+
+```zig
+const util = z_plug.util;
+
+// dB/gain conversions (with -100 dB floor clamping)
+const gain = util.dbToGain(db_value);       // precise
+const gain_fast = util.dbToGainFast(db_value); // fast approximation
+const db = util.gainToDb(gain_value);
+
+// MIDI note/frequency conversions
+const freq = util.midiNoteToFreq(69);       // 440.0 Hz (A4)
+const note = util.freqToMidiNote(440.0);    // 69
+
+// Time conversions
+const samples = util.msToSamples(10.0, sample_rate);
+const ms = util.samplesToMs(480, sample_rate);
+const hz = util.bpmToHz(120.0);
+
+// Pitch utilities
+const ratio = util.semitonesToRatio(12.0);  // 2.0 (one octave up)
+
+// Denormal flushing (important for filters and feedback loops)
+const saved = util.enableFlushToZero();
+defer util.restoreFloatMode(saved);
+// ... DSP code runs with denormals flushed to zero ...
+```
+
+### Platform Constants
+
+The `z_plug.platform` module provides platform-adaptive constants:
+
+```zig
+// Cache line size (128 bytes on aarch64/Apple Silicon, 64 bytes on x86_64)
+const cache_line = z_plug.CACHE_LINE_SIZE;
+
+// Optimal SIMD vector length for f32 (4 on NEON, 8 on AVX2, 16 on AVX-512)
+const vec_len = z_plug.SIMD_VEC_LEN;
+
+// Platform-optimal f32 SIMD vector type
+const F32xV = z_plug.F32xV;
+```
+
+See `examples/super_gain.zig` for a complete example using SIMD, denormal flushing, and block-based processing.
+
 ## Real-Time Safety Rules
 
 Code in `process` must never:
@@ -453,57 +499,43 @@ For background work (sample loading, GUI updates), use a separate thread and com
 This is the complete, working gain plugin from `examples/gain.zig` that loads and runs in DAWs:
 
 ```zig
-/// Simple gain plugin example for zig-plug.
+/// Simple gain plugin example for z-plug.
 ///
-/// This plugin demonstrates the minimal viable plugin:
-/// - One FloatParam for gain control (0.0 to 2.0)
-/// - Stereo processing
-/// - Both CLAP and VST3 support
+/// Demonstrates the minimal viable plugin: one dB-scale gain parameter,
+/// stereo processing, and both CLAP and VST3 support.
+///
+/// For a more complete example with stereo width, SIMD, channel routing,
+/// and denormal flushing, see examples/super_gain.zig.
 const z_plug = @import("z_plug");
 
 const GainPlugin = struct {
-    // Required metadata
     pub const name: [:0]const u8 = "Zig Gain";
     pub const vendor: [:0]const u8 = "zig-plug";
     pub const url: [:0]const u8 = "https://github.com/example/zig-plug";
     pub const version: [:0]const u8 = "0.1.0";
     pub const plugin_id: [:0]const u8 = "com.zig-plug.gain";
-    
-    // Audio configuration: stereo in/out
+
     pub const audio_io_layouts = &[_]z_plug.AudioIOLayout{
         z_plug.AudioIOLayout.STEREO,
     };
-    
-    // Parameters: one gain parameter with linear smoothing
+
     pub const params = &[_]z_plug.Param{
         .{ .float = .{
             .name = "Gain",
             .id = "gain",
-            .default = 1.0,
-            .range = .{ .min = 0.0, .max = 2.0 },
-            .unit = "",
-            .flags = .{},
-            .smoothing = .{ .linear = 10.0 },  // 10ms linear smoothing
+            .default = 0.0,
+            .range = .{ .linear = .{ .min = -60.0, .max = 24.0 } },
+            .unit = "dB",
+            .smoothing = .{ .logarithmic = 50.0 },
         } },
     };
-    
-    // No internal state needed for this simple plugin
-    
-    /// Initialize the plugin with the selected audio layout and buffer config.
-    pub fn init(
-        _: *@This(),
-        _: *const z_plug.AudioIOLayout,
-        _: *const z_plug.BufferConfig,
-    ) bool {
+
+    pub fn init(_: *@This(), _: *const z_plug.AudioIOLayout, _: *const z_plug.BufferConfig) bool {
         return true;
     }
-    
-    /// Clean up plugin resources.
-    pub fn deinit(_: *@This()) void {
-        // No cleanup needed
-    }
-    
-    /// Process audio.
+
+    pub fn deinit(_: *@This()) void {}
+
     pub fn process(
         _: *@This(),
         buffer: *z_plug.Buffer,
@@ -512,19 +544,16 @@ const GainPlugin = struct {
     ) z_plug.ProcessStatus {
         const num_samples = buffer.num_samples;
         const num_channels = buffer.channel_data.len;
-        
-        // Process sample-by-sample to advance smoothing correctly
+
         var i: usize = 0;
         while (i < num_samples) : (i += 1) {
-            // Get the next smoothed gain value (advances smoother by 1 sample)
-            const gain = context.nextSmoothed(1, 0);
-            
-            // Apply gain to all channels for this sample
+            const gain = z_plug.util.dbToGainFast(context.nextSmoothed(1, 0));
+
             for (buffer.channel_data[0..num_channels]) |channel| {
                 channel[i] *= gain;
             }
         }
-        
+
         return z_plug.ProcessStatus.ok();
     }
 };
@@ -546,11 +575,11 @@ Build and install:
 # Build the plugin
 zig build
 
-# Install to system directories
-./install_plugins.sh
+# Install to user directories (automatically signs on macOS)
+zig build install-plugins
 
-# Sign on macOS (required for most DAWs)
-./sign_plugins.sh
+# Install to system directories (requires sudo, automatically signs on macOS)
+zig build install-plugins -Dsystem=true
 ```
 
 ## Next Steps
