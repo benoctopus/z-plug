@@ -307,12 +307,12 @@ pub fn Plugin(comptime T: type) type {
         /// Comptime-sorted parameter lookup table for O(log N) ID->index lookups.
         pub const param_lookup_table = blk: {
             if (params.len == 0) break :blk &[_]ParamLookupEntry{};
-            
+
             var entries: [params.len]ParamLookupEntry = undefined;
             for (param_ids, 0..) |id, i| {
                 entries[i] = .{ .id = id, .index = i };
             }
-            
+
             // Bubble sort (simple and works at comptime)
             var n = entries.len;
             while (n > 1) {
@@ -328,7 +328,7 @@ pub fn Plugin(comptime T: type) type {
                 }
                 n = new_n;
             }
-            
+
             const result = entries;
             break :blk &result;
         };
@@ -337,14 +337,14 @@ pub fn Plugin(comptime T: type) type {
         /// Returns null if the ID is not found.
         pub fn findParamIndex(param_id: u32) ?usize {
             if (params.len == 0) return null;
-            
+
             var left: usize = 0;
             var right: usize = param_lookup_table.len;
-            
+
             while (left < right) {
                 const mid = left + (right - left) / 2;
                 const entry = param_lookup_table[mid];
-                
+
                 if (entry.id == param_id) {
                     return entry.index;
                 } else if (entry.id < param_id) {
@@ -353,7 +353,7 @@ pub fn Plugin(comptime T: type) type {
                     right = mid;
                 }
             }
-            
+
             return null;
         }
 

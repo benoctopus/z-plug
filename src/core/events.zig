@@ -138,7 +138,7 @@ pub const NoteEvent = union(enum) {
     }
 
     // Factory functions for event construction
-    
+
     /// Create a note-on event.
     pub fn noteOn(sample_offset: u32, voice_id: ?i32, ch: u8, note_num: u8, vel: f32) NoteEvent {
         return .{ .note_on = .{ .timing = sample_offset, .voice_id = voice_id, .channel = ch, .note = note_num, .velocity = vel } };

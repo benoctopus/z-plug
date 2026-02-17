@@ -88,6 +88,15 @@ fn installPlugins(allocator: std.mem.Allocator, system: bool) !void {
     };
     defer build_dir.close();
     
+    // Sign plugins automatically on macOS before installing
+    if (builtin.os.tag == .macos) {
+        Color.yellow.print("\nSigning plugins with ad-hoc signature (macOS)...\n", .{});
+        signPluginsInPlace(allocator, plugin_build_dir) catch |err| {
+            Color.yellow.print("Warning: Failed to sign plugins: {s}\n", .{@errorName(err)});
+            Color.yellow.print("Continuing with unsigned plugins (they may not load in some DAWs)\n\n", .{});
+        };
+    }
+    
     // Create target directories
     std.debug.print("Creating target directories if needed...\n", .{});
     std.fs.cwd().makePath(dirs.clap) catch |err| {
@@ -213,6 +222,89 @@ fn copyDirRecursive(allocator: std.mem.Allocator, source_dir: std.fs.Dir, source
             },
             else => {},
         }
+    }
+}
+
+fn signPluginsInPlace(allocator: std.mem.Allocator, plugin_dir: []const u8) !void {
+    var dir = try std.fs.cwd().openDir(plugin_dir, .{ .iterate = true });
+    defer dir.close();
+    
+    var signed_count: u32 = 0;
+    
+    // Sign CLAP plugins
+    var iter = dir.iterate();
+    while (try iter.next()) |entry| {
+        if (entry.kind == .file and std.mem.endsWith(u8, entry.name, ".clap")) {
+            Color.green.print("  → Signing {s}\n", .{entry.name});
+            
+            const plugin_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ plugin_dir, entry.name });
+            defer allocator.free(plugin_path);
+            
+            const result = try std.process.Child.run(.{
+                .allocator = allocator,
+                .argv = &[_][]const u8{ "codesign", "--force", "--deep", "--sign", "-", plugin_path },
+            });
+            defer allocator.free(result.stdout);
+            defer allocator.free(result.stderr);
+            
+            if (result.term.Exited == 0) {
+                signed_count += 1;
+            } else {
+                Color.yellow.print("  Warning: Failed to sign {s}\n", .{entry.name});
+            }
+        }
+    }
+    
+    // Sign VST3 plugins
+    dir.close();
+    dir = try std.fs.cwd().openDir(plugin_dir, .{ .iterate = true });
+    iter = dir.iterate();
+    
+    while (try iter.next()) |entry| {
+        if (entry.kind == .directory and std.mem.endsWith(u8, entry.name, ".vst3")) {
+            Color.green.print("  → Signing {s}\n", .{entry.name});
+            
+            const plugin_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ plugin_dir, entry.name });
+            defer allocator.free(plugin_path);
+            
+            // Sign the binary first
+            const binary_dir = try std.fmt.allocPrint(allocator, "{s}/Contents/MacOS", .{plugin_path});
+            defer allocator.free(binary_dir);
+            
+            var macos_dir = std.fs.cwd().openDir(binary_dir, .{ .iterate = true }) catch continue;
+            defer macos_dir.close();
+            
+            var binary_iter = macos_dir.iterate();
+            while (try binary_iter.next()) |binary_entry| {
+                if (binary_entry.kind == .file) {
+                    const binary_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ binary_dir, binary_entry.name });
+                    defer allocator.free(binary_path);
+                    
+                    _ = std.process.Child.run(.{
+                        .allocator = allocator,
+                        .argv = &[_][]const u8{ "codesign", "--force", "--sign", "-", binary_path },
+                    }) catch continue;
+                }
+            }
+            
+            // Sign the bundle
+            const result = try std.process.Child.run(.{
+                .allocator = allocator,
+                .argv = &[_][]const u8{ "codesign", "--force", "--deep", "--sign", "-", plugin_path },
+            });
+            defer allocator.free(result.stdout);
+            defer allocator.free(result.stderr);
+            
+            if (result.term.Exited == 0) {
+                signed_count += 1;
+            } else {
+                Color.yellow.print("  Warning: Failed to sign {s}\n", .{entry.name});
+            }
+        }
+    }
+    
+    if (signed_count > 0) {
+        Color.green.print("  ✓ Signed {d} plugin(s)\n\n", .{signed_count});
     }
 }
 

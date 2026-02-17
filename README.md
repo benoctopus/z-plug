@@ -26,11 +26,10 @@ const GainPlugin = struct {
         .{ .float = .{
             .name = "Gain",
             .id = "gain",
-            .default = 1.0,
-            .range = .{ .min = 0.0, .max = 2.0 },
-            .unit = "",
-            .flags = .{},
-            .smoothing = .{ .linear = 10.0 },
+            .default = 0.0,
+            .range = .{ .linear = .{ .min = -60.0, .max = 24.0 } },
+            .unit = "dB",
+            .smoothing = .{ .logarithmic = 50.0 },
         } },
     };
 
@@ -51,7 +50,7 @@ const GainPlugin = struct {
 
         var i: usize = 0;
         while (i < num_samples) : (i += 1) {
-            const gain = context.nextSmoothed(1, 0);
+            const gain = z_plug.util.dbToGainFast(context.nextSmoothed(1, 0));
             for (buffer.channel_data[0..num_channels]) |channel| {
                 channel[i] *= gain;
             }
@@ -61,14 +60,13 @@ const GainPlugin = struct {
     }
 };
 
-// Export both formats
-comptime {
-    _ = z_plug.ClapEntry(GainPlugin);
-    _ = z_plug.Vst3Factory(GainPlugin);
-}
+comptime { _ = z_plug.ClapEntry(GainPlugin); }
+comptime { _ = z_plug.Vst3Factory(GainPlugin); }
 ```
 
-Plugin metadata, parameters, and audio layout are declared as comptime constants. The framework uses them to generate vtables, parameter lists, GUIDs, and lookup tables at compile time. No allocations happen on the audio thread.
+Plugin metadata, parameters, and audio layout are declared as comptime constants. The framework generates vtables, parameter lists, GUIDs, and lookup tables at compile time. No allocations happen on the audio thread. The `util.dbToGainFast` conversion turns the dB parameter into a linear gain factor in the inner loop.
+
+See [`examples/super_gain.zig`](examples/super_gain.zig) for a more complete showcase: dB-scale gain with logarithmic smoothing, mid-side stereo width, platform-adaptive SIMD, denormal flushing, block-based processing, and channel routing.
 
 ## Building
 
@@ -84,13 +82,13 @@ zig build
 # Run tests
 zig build test
 
-# Install plugins to user directories
+# Install plugins to user directories (automatically signs on macOS)
 zig build install-plugins
 
-# Install to system directories (requires sudo)
+# Install to system directories (requires sudo, automatically signs on macOS)
 zig build install-plugins -Dsystem=true
 
-# Sign plugins on macOS (required for most DAWs)
+# Sign plugins on macOS without installing (optional - install-plugins does this automatically)
 zig build sign-plugins
 
 # Uninstall
@@ -119,7 +117,8 @@ src/
     common.zig       # Shared wrapper utilities
   root.zig           # Public API
 examples/
-  gain.zig           # Gain plugin (CLAP + VST3)
+  gain.zig           # Minimal gain plugin (CLAP + VST3)
+  super_gain.zig     # Feature showcase (dB gain, width, SIMD, etc.)
 build.zig            # Build system with addPlugin() helper
 build_tools/         # Install/sign/uninstall scripts
 docs/                # Documentation

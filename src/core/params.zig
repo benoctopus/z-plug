@@ -1070,12 +1070,12 @@ test "Smoother logarithmic geometric progression" {
     const sample_rate = 1000.0;
 
     smoother.setTarget(sample_rate, 1000.0);
-    
+
     // The ratio between consecutive samples should be constant (geometric progression)
     const v1 = smoother.next();
     const v2 = smoother.next();
     const v3 = smoother.next();
-    
+
     const ratio1 = v2 / v1;
     const ratio2 = v3 / v2;
     try std.testing.expectApproxEqAbs(ratio1, ratio2, 1e-4);
@@ -1096,19 +1096,19 @@ test "Smoother logarithmic nextBlock optimization" {
     const sample_rate = 44100.0;
 
     smoother.setTarget(sample_rate, 10000.0);
-    
+
     var block: [64]f32 = undefined;
     smoother.nextBlock(&block);
-    
+
     // First sample should be the starting value (before stepping)
     try std.testing.expectApproxEqAbs(@as(f32, 100.0), block[0], 1e-3);
-    
+
     // Second sample should match what next() would return after one step from 100.0
     var smoother2 = Smoother.init(100.0, .{ .logarithmic = 100.0 });
     smoother2.setTarget(sample_rate, 10000.0);
     const expected_second = smoother2.next();
     try std.testing.expectApproxEqAbs(expected_second, block[1], 1e-3);
-    
+
     // Values should be monotonically increasing
     for (block[0 .. block.len - 1], block[1..]) |curr, next_val| {
         try std.testing.expect(next_val > curr);

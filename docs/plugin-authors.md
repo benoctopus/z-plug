@@ -136,7 +136,7 @@ pub const params = &[_]z_plug.Param{
         .name = "Gain",
         .id = "gain",
         .default = 0.0,  // dB
-        .range = .{ .min = -24.0, .max = 24.0 },
+        .range = .{ .linear = .{ .min = -24.0, .max = 24.0 } },
         .unit = "dB",
         .smoothing = .{ .linear = 10.0 },  // 10ms linear smoothing
     }},
@@ -169,6 +169,20 @@ The `id` field must be a **stable string**. It's used to:
 - Identify parameters in state save/load
 - **Never change IDs after releasing a plugin** — it breaks presets and automation
 
+### Parameter Ranges
+
+Float parameters support two range types:
+
+```zig
+// Linear range (uniform distribution across the knob)
+.range = .{ .linear = .{ .min = -24.0, .max = 24.0 } },
+
+// Logarithmic range (for frequency, gain — perceptually uniform)
+.range = .{ .logarithmic = .{ .min = 20.0, .max = 20000.0 } },
+```
+
+Use `.logarithmic` for parameters where human perception is logarithmic (frequency, gain in dB). The framework handles normalization/unnormalization in log space automatically.
+
 ### Parameter Smoothing
 
 Float parameters support automatic smoothing to prevent audio artifacts when values change. Add a `smoothing` field to enable:
@@ -178,14 +192,15 @@ Float parameters support automatic smoothing to prevent audio artifacts when val
     .name = "Cutoff",
     .id = "cutoff",
     .default = 1000.0,
-    .range = .{ .min = 20.0, .max = 20000.0 },
-    .smoothing = .{ .linear = 10.0 },  // 10ms linear ramp
+    .range = .{ .logarithmic = .{ .min = 20.0, .max = 20000.0 } },
+    .smoothing = .{ .logarithmic = 10.0 },  // 10ms logarithmic smoothing
 }}
 ```
 
 Available smoothing styles:
 - **`.linear`** — Linear ramp over N milliseconds
-- **`.exponential`** — Exponential ramp over N milliseconds (better for frequency)
+- **`.exponential`** — Exponential smoothing (single-pole IIR) over N milliseconds
+- **`.logarithmic`** — Logarithmic interpolation over N milliseconds (smooths in log space, producing exponential curves in linear space — ideal for frequency sweeps and gain changes)
 - **`.none`** — No smoothing (instant value changes)
 
 To use smoothed values in your `process` function, call `context.nextSmoothed()` for each sample:

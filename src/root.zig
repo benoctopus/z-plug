@@ -52,12 +52,17 @@ pub const LoadContext = @import("core/state.zig").LoadContext;
 // Platform constants
 pub const platform = @import("core/platform.zig");
 pub const CACHE_LINE_SIZE = platform.CACHE_LINE_SIZE;
+pub const SIMD_VEC_LEN = platform.SIMD_VEC_LEN;
+pub const F32xV = platform.F32xV;
 pub const StateVersion = @import("core/state.zig").StateVersion;
 pub const writeHeader = @import("core/state.zig").writeHeader;
 pub const readHeader = @import("core/state.zig").readHeader;
 
 // Utility functions for audio DSP
 pub const util = @import("core/util.zig");
+
+// Metering utilities for peak, RMS, and LUFS measurement
+pub const metering = @import("core/metering.zig");
 
 // Format wrappers
 pub const ClapEntry = @import("wrappers/clap/entry.zig").ClapEntry;
@@ -72,6 +77,7 @@ test {
     std.testing.refAllDecls(@import("core/state.zig"));
     std.testing.refAllDecls(@import("core/plugin.zig"));
     std.testing.refAllDecls(@import("core/util.zig"));
+    std.testing.refAllDecls(@import("core/metering.zig"));
 
     // Wrapper tests
     std.testing.refAllDecls(@import("wrappers/clap/entry.zig"));

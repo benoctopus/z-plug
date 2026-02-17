@@ -192,6 +192,24 @@ pub fn build(b: *std.Build) void {
         .formats = .{ .clap = true, .vst3 = true },
     });
 
+    // Build example super gain plugin (feature showcase)
+    addPlugin(b, .{
+        .name = "ZigSuperGain",
+        .root_source_file = b.path("examples/super_gain.zig"),
+        .target = target,
+        .optimize = optimize,
+        .formats = .{ .clap = true, .vst3 = true },
+    });
+
+    // Build example polyphonic synth plugin (MIDI + voice management showcase)
+    addPlugin(b, .{
+        .name = "ZigPolySynth",
+        .root_source_file = b.path("examples/poly_synth.zig"),
+        .target = target,
+        .optimize = optimize,
+        .formats = .{ .clap = true, .vst3 = true },
+    });
+
     // Here we define an executable. An executable needs to have a root module
     // which needs to expose a `main` function. While we could add a main function
     // to the module defined above, it's sometimes preferable to split business

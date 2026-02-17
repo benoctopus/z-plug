@@ -372,16 +372,16 @@ test "hzToBpm conversion" {
 test "denormal flushing enable and restore" {
     // This test verifies that denormal flushing works on supported platforms.
     // On unsupported platforms, it's a no-op and the test still passes.
-    
+
     const saved = enableFlushToZero();
     defer restoreFloatMode(saved);
-    
+
     // Create a subnormal value
     var denormal: f32 = 1e-40;
-    
+
     // On platforms with FTZ enabled, arithmetic on denormals should flush to zero
     denormal = denormal + 1e-41;
-    
+
     // We can't reliably test this produces exactly 0.0 because:
     // 1. The optimizer might eliminate the operation
     // 2. Some platforms don't support FTZ

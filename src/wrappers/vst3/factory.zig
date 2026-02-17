@@ -223,18 +223,20 @@ pub fn Vst3Factory(comptime T: type) type {
                 return vst3.types.kOutOfMemory;
             };
 
-            // Validate IID via queryInterface
-            const comp_ptr: *anyopaque = @ptrCast(comp);
-            const query_result = comp.component_vtbl.lpVtbl.queryInterface(comp_ptr, iid_bytes, obj);
+            // Validate IID via queryInterface -- pass the IComponent interface
+            // pointer, not the Self pointer, since fromComponent uses
+            // @fieldParentPtr("component_vtbl", ...) to recover Self.
+            const iface_ptr: *anyopaque = @ptrCast(&comp.component_vtbl);
+            const query_result = comp.component_vtbl.lpVtbl.queryInterface(iface_ptr, iid_bytes, obj);
 
             if (query_result == vst3.types.kResultOk) {
                 // queryInterface added a ref (now ref_count=2), release factory's ref
-                _ = comp.component_vtbl.lpVtbl.release(comp_ptr);
+                _ = comp.component_vtbl.lpVtbl.release(iface_ptr);
                 return vst3.types.kResultOk;
             }
 
             // Requested interface not supported -- release and fail
-            _ = comp.component_vtbl.lpVtbl.release(comp_ptr);
+            _ = comp.component_vtbl.lpVtbl.release(iface_ptr);
             obj.* = null;
             return vst3.types.kNoInterface;
         }
