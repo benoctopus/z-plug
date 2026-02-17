@@ -134,12 +134,17 @@ docs/                # Documentation
 
 ## Status
 
-The core framework, both wrappers, and the build system work. The example gain plugin loads and runs in DAWs. Still to do: more example plugins, CI, and deciding on a license for the framework itself.
+The core framework, both wrappers, and the build system work. The example gain plugin loads and runs in DAWs. Still to do: 
+- UI support
+- more example plugins
+- probably many other things and stuff yet to be determined
+
+This is an **mvp** implementation and a lot of the framework is wholly untested, use at your own risk.
 
 ## License
 
-Framework license: TBD.
+Framework code is licensed under the [Mozilla Public License 2.0](LICENSE).
 
 **CLAP bindings** (`src/bindings/clap/`): derived from [clap-zig-bindings](https://git.sr.ht/~interpunct/clap-zig-bindings), GNU LGPL v3.0+. See `src/bindings/clap/LICENSE`.
 
-**VST3 bindings** (`src/bindings/vst3/`): based on [Steinberg vst3_c_api](https://github.com/steinbergmedia/vst3_c_api), MIT.
+**VST3 bindings** (`src/bindings/vst3/`): based on [Steinberg vst3_c_api](https://github.com/steinbergmedia/vst3_c_api), MIT. See `src/bindings/vst3/LICENSE`.

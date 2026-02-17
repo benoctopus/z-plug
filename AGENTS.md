@@ -6,15 +6,25 @@ zig-plug is an audio plugin framework for Zig 0.15.2 that lets a plugin author w
 
 ### License Compliance
 
-This project includes CLAP bindings that are licensed under the **GNU LGPL v3.0**:
+This project's framework code is licensed under the **Mozilla Public License 2.0** (MPL 2.0):
+- License file: `LICENSE` (root directory)
+- MPL 2.0 is file-based copyleft: modifications to framework files must be shared, but plugins built with the framework can be proprietary
+- When creating new framework source files, include the MPL 2.0 header comment (see `LICENSE` Exhibit A)
+
+The project also includes third-party bindings with their own licenses:
+
+**CLAP bindings** (GNU LGPL v3.0):
 - Location: `src/bindings/clap/`
 - Original source: [clap-zig-bindings](https://git.sr.ht/~interpunct/clap-zig-bindings)
 - Modified for: Zig 0.15.2 compatibility
 - License file: `src/bindings/clap/LICENSE`
 
-When distributing binaries or using this framework, you must comply with LGPL v3 requirements, which means users must be able to replace the LGPL library. This is satisfied by either:
-1. Distributing source code (recommended for open source projects)
-2. Using dynamic linking for the CLAP bindings portion
+**VST3 bindings** (MIT):
+- Location: `src/bindings/vst3/`
+- Based on: [Steinberg vst3_c_api](https://github.com/steinbergmedia/vst3_c_api)
+- License file: `src/bindings/vst3/LICENSE`
+
+When distributing binaries or using this framework, comply with all applicable license requirements.
 
 ## Core Design Principles
 
