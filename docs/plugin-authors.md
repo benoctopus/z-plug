@@ -56,8 +56,10 @@ pub const MyPlugin = struct {
         _ = context;
 
         // Process audio: apply gain to all channels
-        for (0..buffer.channels()) |ch| {
-            const channel = buffer.getChannel(ch);
+        const num_channels = buffer.channel_data.len;
+        var ch: usize = 0;
+        while (ch < num_channels) : (ch += 1) {
+            const channel = buffer.channel_data[ch];
             for (channel) |*sample| {
                 sample.* *= self.gain;
             }
@@ -66,6 +68,16 @@ pub const MyPlugin = struct {
         return z_plug.ProcessStatus.ok();
     }
 };
+
+// Export CLAP entry point
+comptime {
+    _ = z_plug.ClapEntry(MyPlugin);
+}
+
+// Export VST3 factory
+comptime {
+    _ = z_plug.Vst3Factory(MyPlugin);
+}
 ```
 
 ### Required Declarations
@@ -91,9 +103,28 @@ Every plugin struct must declare:
 |-------------|------|---------|-------------|
 | `midi_input` | `MidiConfig` | `.none` | Note/MIDI input configuration |
 | `midi_output` | `MidiConfig` | `.none` | Note/MIDI output configuration |
+| `state_version` | `u32` | `1` | State format version for migration |
 | `reset` | Function | no-op | Clear internal state (e.g., delay lines) |
 | `save` | Function | no-op | Save plugin state to stream |
 | `load` | Function | no-op | Load plugin state from stream |
+
+## Building and Exporting Plugins
+
+To make your plugin available to hosts, you must export both CLAP and VST3 entry points using comptime blocks at the end of your plugin file:
+
+```zig
+// Export CLAP entry point
+comptime {
+    _ = z_plug.ClapEntry(YourPlugin);
+}
+
+// Export VST3 factory
+comptime {
+    _ = z_plug.Vst3Factory(YourPlugin);
+}
+```
+
+These comptime blocks generate the necessary C ABI symbols (`clap_entry` and `GetPluginFactory`) that DAW hosts use to load your plugin.
 
 ## Declaring Parameters
 
@@ -107,6 +138,7 @@ pub const params = &[_]z_plug.Param{
         .default = 0.0,  // dB
         .range = .{ .min = -24.0, .max = 24.0 },
         .unit = "dB",
+        .smoothing = .{ .linear = 10.0 },  // 10ms linear smoothing
     }},
     .{ .boolean = .{
         .name = "Bypass",
@@ -137,6 +169,47 @@ The `id` field must be a **stable string**. It's used to:
 - Identify parameters in state save/load
 - **Never change IDs after releasing a plugin** — it breaks presets and automation
 
+### Parameter Smoothing
+
+Float parameters support automatic smoothing to prevent audio artifacts when values change. Add a `smoothing` field to enable:
+
+```zig
+.{ .float = .{
+    .name = "Cutoff",
+    .id = "cutoff",
+    .default = 1000.0,
+    .range = .{ .min = 20.0, .max = 20000.0 },
+    .smoothing = .{ .linear = 10.0 },  // 10ms linear ramp
+}}
+```
+
+Available smoothing styles:
+- **`.linear`** — Linear ramp over N milliseconds
+- **`.exponential`** — Exponential ramp over N milliseconds (better for frequency)
+- **`.none`** — No smoothing (instant value changes)
+
+To use smoothed values in your `process` function, call `context.nextSmoothed()` for each sample:
+
+```zig
+pub fn process(
+    self: *MyPlugin,
+    buffer: *z_plug.Buffer,
+    aux: *z_plug.AuxBuffers,
+    context: *z_plug.ProcessContext,
+) z_plug.ProcessStatus {
+    var i: usize = 0;
+    while (i < buffer.num_samples) : (i += 1) {
+        // Get smoothed parameter value (advances smoother by 1 sample)
+        const cutoff = context.nextSmoothed(1, 0);  // (N params, param index)
+        
+        // Use the smoothed value in your DSP
+        self.filter.setCutoff(cutoff);
+        // ... process audio ...
+    }
+    return z_plug.ProcessStatus.ok();
+}
+```
+
 ## Processing Audio
 
 The `process` function receives three arguments:
@@ -157,8 +230,10 @@ pub fn process(
 **1. Raw slice access** (most direct):
 
 ```zig
-for (0..buffer.channels()) |ch| {
-    const channel = buffer.getChannel(ch);
+const num_channels = buffer.channel_data.len;
+var ch: usize = 0;
+while (ch < num_channels) : (ch += 1) {
+    const channel = buffer.channel_data[ch];
     for (channel) |*sample| {
         sample.* *= self.gain;
     }
@@ -170,10 +245,10 @@ for (0..buffer.channels()) |ch| {
 ```zig
 var iter = buffer.iterSamples();
 while (iter.next()) |cs| {
-    const left = cs.get(0);
-    const right = cs.get(1);
-    cs.set(0, left * self.gain);
-    cs.set(1, right * self.gain);
+    const left = cs.samples[0];
+    const right = cs.samples[1];
+    cs.samples[0] = left * self.gain;
+    cs.samples[1] = right * self.gain;
 }
 ```
 
@@ -186,9 +261,9 @@ while (iter.next()) |entry| {
 }
 ```
 
-### Transport and Events
+### ProcessContext API
 
-The `ProcessContext` provides:
+The `ProcessContext` provides access to transport, events, and parameters:
 
 ```zig
 pub const ProcessContext = struct {
@@ -196,8 +271,33 @@ pub const ProcessContext = struct {
     input_events: []const NoteEvent, // Pre-sorted by timing
     output_events: *EventOutputList, // For sending events to host
     sample_rate: f32,
+    
+    // Parameter access methods:
+    pub fn getFloat(comptime N: usize, comptime index: usize) f32;
+    pub fn getInt(comptime N: usize, comptime index: usize) i32;
+    pub fn getBool(comptime N: usize, comptime index: usize) bool;
+    pub fn getChoice(comptime N: usize, comptime index: usize) u32;
+    pub fn nextSmoothed(comptime N: usize, comptime index: usize) f32;
 };
 ```
+
+**Accessing parameter values:**
+
+```zig
+// Get current float parameter value (in plain units)
+const gain = context.getFloat(1, 0);  // N=1 param, index=0
+
+// Get next smoothed sample (advances smoother)
+const smoothed_gain = context.nextSmoothed(1, 0);
+
+// Get boolean parameter
+const bypass = context.getBool(2, 1);  // N=2 params, index=1
+
+// Get choice parameter index
+const mode = context.getChoice(3, 2);  // N=3 params, index=2
+```
+
+### Transport and Events
 
 **Handling note events:**
 
@@ -335,60 +435,107 @@ For background work (sample loading, GUI updates), use a separate thread and com
 
 ## Complete Example: Gain Plugin
 
+This is the complete, working gain plugin from `examples/gain.zig` that loads and runs in DAWs:
+
 ```zig
-const std = @import("std");
+/// Simple gain plugin example for zig-plug.
+///
+/// This plugin demonstrates the minimal viable plugin:
+/// - One FloatParam for gain control (0.0 to 2.0)
+/// - Stereo processing
+/// - Both CLAP and VST3 support
 const z_plug = @import("z_plug");
 
-pub const GainPlugin = struct {
-    pub const name: [:0]const u8 = "Simple Gain";
-    pub const vendor: [:0]const u8 = "Example Co";
-    pub const url: [:0]const u8 = "https://example.com";
-    pub const version: [:0]const u8 = "1.0.0";
-    pub const plugin_id: [:0]const u8 = "com.example.gain";
+const GainPlugin = struct {
+    // Required metadata
+    pub const name: [:0]const u8 = "Zig Gain";
+    pub const vendor: [:0]const u8 = "zig-plug";
+    pub const url: [:0]const u8 = "https://github.com/example/zig-plug";
+    pub const version: [:0]const u8 = "0.1.0";
+    pub const plugin_id: [:0]const u8 = "com.zig-plug.gain";
+    
+    // Audio configuration: stereo in/out
     pub const audio_io_layouts = &[_]z_plug.AudioIOLayout{
         z_plug.AudioIOLayout.STEREO,
-        z_plug.AudioIOLayout.MONO,
     };
+    
+    // Parameters: one gain parameter with linear smoothing
     pub const params = &[_]z_plug.Param{
         .{ .float = .{
             .name = "Gain",
             .id = "gain",
-            .default = 0.0,
-            .range = .{ .min = -60.0, .max = 12.0 },
-            .unit = "dB",
-        }},
+            .default = 1.0,
+            .range = .{ .min = 0.0, .max = 2.0 },
+            .unit = "",
+            .flags = .{},
+            .smoothing = .{ .linear = 10.0 },  // 10ms linear smoothing
+        } },
     };
-
-    param_values: z_plug.ParamValues(1),
-
-    pub fn init(self: *GainPlugin, _: *const z_plug.AudioIOLayout, _: *const z_plug.BufferConfig) bool {
-        self.param_values = z_plug.ParamValues(1).init(&params);
+    
+    // No internal state needed for this simple plugin
+    
+    /// Initialize the plugin with the selected audio layout and buffer config.
+    pub fn init(
+        _: *@This(),
+        _: *const z_plug.AudioIOLayout,
+        _: *const z_plug.BufferConfig,
+    ) bool {
         return true;
     }
-
-    pub fn deinit(_: *GainPlugin) void {}
-
+    
+    /// Clean up plugin resources.
+    pub fn deinit(_: *@This()) void {
+        // No cleanup needed
+    }
+    
+    /// Process audio.
     pub fn process(
-        self: *GainPlugin,
+        _: *@This(),
         buffer: *z_plug.Buffer,
         _: *z_plug.AuxBuffers,
-        _: *z_plug.ProcessContext,
+        context: *z_plug.ProcessContext,
     ) z_plug.ProcessStatus {
-        // Get gain in dB, convert to linear
-        const gain_db = params[0].float.range.unnormalize(self.param_values.get(0));
-        const gain_linear = std.math.pow(f32, 10.0, gain_db / 20.0);
-
-        // Apply gain
-        for (0..buffer.channels()) |ch| {
-            const channel = buffer.getChannel(ch);
-            for (channel) |*sample| {
-                sample.* *= gain_linear;
+        const num_samples = buffer.num_samples;
+        const num_channels = buffer.channel_data.len;
+        
+        // Process sample-by-sample to advance smoothing correctly
+        var i: usize = 0;
+        while (i < num_samples) : (i += 1) {
+            // Get the next smoothed gain value (advances smoother by 1 sample)
+            const gain = context.nextSmoothed(1, 0);
+            
+            // Apply gain to all channels for this sample
+            for (buffer.channel_data[0..num_channels]) |channel| {
+                channel[i] *= gain;
             }
         }
-
+        
         return z_plug.ProcessStatus.ok();
     }
 };
+
+// Export CLAP entry point
+comptime {
+    _ = z_plug.ClapEntry(GainPlugin);
+}
+
+// Export VST3 factory
+comptime {
+    _ = z_plug.Vst3Factory(GainPlugin);
+}
+```
+
+Build and install:
+
+```bash
+# Build the plugin
+zig build
+
+# Install to system directories
+./install_plugins.sh
+
+# Sign on macOS (required for most DAWs)
+./sign_plugins.sh
 ```
 
 ## Next Steps

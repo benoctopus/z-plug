@@ -52,18 +52,44 @@ zig build test --summary all
 ```
 
 Tests include:
-- 46 tests from framework core modules (`src/core/`)
-- 43 tests from CLAP bindings (`src/bindings/clap/`)
-- 2 tests from VST3 bindings (`src/bindings/vst3/`)
-- 1 test from the executable
+- Framework core modules (`src/core/`)
+- CLAP bindings (`src/bindings/clap/`)
+- VST3 bindings (`src/bindings/vst3/`)
+- Wrapper implementations
 
-### Build (future)
-
-Once example plugins are implemented:
+### Build plugins
 
 ```bash
-zig build -Dplugin=examples/gain
+# Build all example plugins (outputs to zig-out/plugins/)
+zig build
+
+# The gain plugin produces:
+# - zig-out/plugins/ZigGain.clap (Linux/macOS) or ZigGain.clap.dll (Windows)
+# - zig-out/plugins/ZigGain.vst3/ (macOS bundle) or ZigGain.vst3 (Linux/Windows)
 ```
+
+### Install plugins for DAW testing
+
+Use the provided helper scripts to install plugins to standard system directories:
+
+```bash
+# Install plugins to user directories (recommended)
+./install_plugins.sh
+
+# On macOS, plugins must be code-signed for most DAWs
+./sign_plugins.sh
+
+# Uninstall plugins
+./uninstall_plugins.sh --dry-run  # preview what would be removed
+./uninstall_plugins.sh            # actually remove
+```
+
+The install script copies plugins to:
+- **macOS**: `~/Library/Audio/Plug-Ins/CLAP/` and `~/Library/Audio/Plug-Ins/VST3/`
+- **Linux**: `~/.clap/` and `~/.vst3/`
+- **Windows**: `%LOCALAPPDATA%\Programs\Common\CLAP\` and `%LOCALAPPDATA%\Programs\Common\VST3\`
+
+After installation, restart your DAW and rescan plugins.
 
 ## Project Structure
 
@@ -81,7 +107,7 @@ z-plug/
 │   ├── core/                      # Framework core (API-agnostic)
 │   │   ├── README.md              # Core module documentation
 │   │   ├── plugin.zig             # Plugin interface & validation
-│   │   ├── params.zig             # Parameter system
+│   │   ├── params.zig             # Parameter system with smoothing
 │   │   ├── buffer.zig             # Audio buffer abstraction
 │   │   ├── events.zig             # Note/MIDI events
 │   │   ├── state.zig              # State persistence
@@ -91,21 +117,39 @@ z-plug/
 │   │   ├── clap/                  # CLAP C API bindings
 │   │   │   ├── README.md          # CLAP bindings docs
 │   │   │   ├── main.zig           # CLAP bindings root
-│   │   │   └── ... (30+ files)
+│   │   │   └── ... (40+ files)
 │   │   │
 │   │   └── vst3/                  # VST3 C API bindings
 │   │       ├── README.md          # VST3 bindings docs
 │   │       ├── root.zig           # VST3 bindings root
-│   │       └── ... (~15 files)
+│   │       └── ... (~14 files)
 │   │
-│   └── wrappers/                  # Format-specific wrappers (planned)
+│   └── wrappers/                  # Format-specific wrappers
 │       ├── clap/                  # CLAP wrapper implementation
+│       │   ├── README.md          # CLAP wrapper docs
+│       │   ├── entry.zig          # clap_entry export
+│       │   ├── factory.zig        # Plugin factory
+│       │   ├── plugin.zig         # Plugin wrapper
+│       │   └── extensions.zig     # CLAP extensions
+│       │
 │       └── vst3/                  # VST3 wrapper implementation
+│           ├── README.md          # VST3 wrapper docs
+│           ├── factory.zig        # GetPluginFactory export
+│           ├── component.zig      # IComponent + IAudioProcessor
+│           ├── controller.zig     # IEditController
+│           └── com.zig            # COM helpers
+│
+├── examples/                      # Example plugins
+│   └── gain.zig                   # Simple gain plugin (CLAP + VST3)
 │
 ├── build.zig                      # Build system
 ├── build.zig.zon                  # Package manifest
 ├── flake.nix                      # Nix development environment
+├── install_plugins.sh             # Install plugins to system directories
+├── sign_plugins.sh                # Code-sign plugins on macOS
+├── uninstall_plugins.sh           # Remove installed plugins
 ├── AGENTS.md                      # Coding guidelines for AI agents
+├── zig-plug-design.md             # Complete design document
 └── README.md                      # Project overview
 ```
 

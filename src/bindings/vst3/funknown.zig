@@ -35,7 +35,7 @@ pub const Interface = struct {
 /// const MyObject = struct {
 ///     i_component: vst3.IComponent,
 ///     i_audio_processor: vst3.IAudioProcessor,
-///     
+///
 ///     const funknown_component = vst3.funknown.FUnknown(
 ///         @offsetOf(MyObject, "i_component"),
 ///         &[_]Interface{
@@ -61,14 +61,14 @@ pub fn FUnknownImpl(comptime self_offset: usize, comptime interfaces: []const In
                     const self_addr = @intFromPtr(self);
                     const object_base = self_addr - self_offset;
                     const interface_ptr = object_base + interface.ptr_offset;
-                    
+
                     const interface_vtbl: *anyopaque = @ptrFromInt(interface_ptr);
                     _ = addRef(interface_vtbl);
                     obj.* = interface_vtbl;
                     return types.kResultOk;
                 }
             }
-            
+
             obj.* = null;
             return types.kNoInterface;
         }

@@ -302,7 +302,7 @@ pub fn ParamValues(comptime N: usize) type {
 pub fn ParamAccess(comptime N: usize, comptime params_meta: []const Param) type {
     return struct {
         const Self = @This();
-        
+
         values: *ParamValues(N),
         smoothers: *SmootherBank(N),
 
@@ -312,7 +312,7 @@ pub fn ParamAccess(comptime N: usize, comptime params_meta: []const Param) type 
                 if (index >= N) @compileError("Parameter index out of bounds");
                 if (params_meta[index] != .float) @compileError("Parameter at index is not a float");
             }
-            
+
             const normalized = self.values.get(index);
             return params_meta[index].float.range.unnormalize(normalized);
         }
@@ -323,7 +323,7 @@ pub fn ParamAccess(comptime N: usize, comptime params_meta: []const Param) type 
                 if (index >= N) @compileError("Parameter index out of bounds");
                 if (params_meta[index] != .int) @compileError("Parameter at index is not an int");
             }
-            
+
             const normalized = self.values.get(index);
             return params_meta[index].int.range.unnormalize(normalized);
         }
@@ -334,7 +334,7 @@ pub fn ParamAccess(comptime N: usize, comptime params_meta: []const Param) type 
                 if (index >= N) @compileError("Parameter index out of bounds");
                 if (params_meta[index] != .boolean) @compileError("Parameter at index is not a boolean");
             }
-            
+
             const normalized = self.values.get(index);
             return normalized > 0.5;
         }
@@ -345,7 +345,7 @@ pub fn ParamAccess(comptime N: usize, comptime params_meta: []const Param) type 
                 if (index >= N) @compileError("Parameter index out of bounds");
                 if (params_meta[index] != .choice) @compileError("Parameter at index is not a choice");
             }
-            
+
             const normalized = self.values.get(index);
             if (params_meta[index].choice.labels.len <= 1) return 0;
             return @intFromFloat(normalized * @as(f32, @floatFromInt(params_meta[index].choice.labels.len - 1)));
@@ -418,7 +418,7 @@ pub const Smoother = struct {
     /// Set a new target value and compute smoothing parameters.
     pub fn setTarget(self: *Smoother, sample_rate: f32, new_target: f32) void {
         self.target = new_target;
-        
+
         switch (self.style) {
             .none => {
                 self.current = new_target;
@@ -502,7 +502,7 @@ pub const Smoother = struct {
 pub fn SmootherBank(comptime N: usize) type {
     return struct {
         const Self = @This();
-        
+
         /// One smoother per parameter.
         smoothers: [N]Smoother,
 
@@ -515,14 +515,14 @@ pub fn SmootherBank(comptime N: usize) type {
                     .int => |ip| if (@hasField(@TypeOf(ip), "smoothing")) ip.smoothing else .none,
                     .boolean, .choice => .none,
                 };
-                
+
                 const default_plain: f32 = switch (p) {
                     .float => |fp| fp.default,
                     .int => |ip| @floatFromInt(ip.default),
                     .boolean => |bp| if (bp.default) 1.0 else 0.0,
                     .choice => |cp| @floatFromInt(cp.default),
                 };
-                
+
                 bank[i] = Smoother.init(default_plain, style);
             }
             return Self{ .smoothers = bank };
@@ -680,16 +680,16 @@ test "ParamValues init and get" {
 test "Smoother linear reaches target" {
     var smoother = Smoother.init(0.0, .{ .linear = 10.0 }); // 10ms linear
     const sample_rate = 1000.0; // 1kHz
-    
+
     smoother.setTarget(sample_rate, 10.0);
-    
+
     // Should reach target in 10 samples (10ms at 1kHz)
     try std.testing.expectEqual(@as(u32, 10), smoother.steps_left);
-    
+
     // First sample
     const v1 = smoother.next();
     try std.testing.expectApproxEqAbs(@as(f32, 1.0), v1, 1e-4);
-    
+
     // Last sample should snap to target
     smoother.steps_left = 1;
     smoother.current = 9.9;
@@ -701,16 +701,16 @@ test "Smoother linear reaches target" {
 test "Smoother exponential converges" {
     var smoother = Smoother.init(0.0, .{ .exponential = 10.0 });
     const sample_rate = 1000.0;
-    
+
     smoother.setTarget(sample_rate, 1.0);
-    
+
     // Exponential should approach target asymptotically
     const v1 = smoother.next();
     try std.testing.expect(v1 > 0.0 and v1 < 1.0);
-    
+
     const v2 = smoother.next();
     try std.testing.expect(v2 > v1 and v2 < 1.0);
-    
+
     // After steps_left reaches 0, should snap to target
     smoother.steps_left = 1;
     smoother.current = 0.999;
@@ -720,21 +720,21 @@ test "Smoother exponential converges" {
 
 test "Smoother none has no smoothing" {
     var smoother = Smoother.init(5.0, .none);
-    
+
     smoother.setTarget(44100.0, 10.0);
     try std.testing.expectApproxEqAbs(@as(f32, 10.0), smoother.current, 1e-6);
     try std.testing.expectEqual(@as(u32, 0), smoother.steps_left);
-    
+
     const v = smoother.next();
     try std.testing.expectApproxEqAbs(@as(f32, 10.0), v, 1e-6);
 }
 
 test "Smoother reset snaps instantly" {
     var smoother = Smoother.init(0.0, .{ .linear = 100.0 });
-    
+
     smoother.setTarget(44100.0, 10.0);
     try std.testing.expect(smoother.steps_left > 0);
-    
+
     smoother.reset(5.0);
     try std.testing.expectApproxEqAbs(@as(f32, 5.0), smoother.current, 1e-6);
     try std.testing.expectApproxEqAbs(@as(f32, 5.0), smoother.target, 1e-6);
@@ -743,12 +743,12 @@ test "Smoother reset snaps instantly" {
 
 test "Smoother isSmoothing" {
     var smoother = Smoother.init(0.0, .{ .linear = 10.0 });
-    
+
     try std.testing.expect(!smoother.isSmoothing());
-    
+
     smoother.setTarget(1000.0, 1.0);
     try std.testing.expect(smoother.isSmoothing());
-    
+
     smoother.reset(0.5);
     try std.testing.expect(!smoother.isSmoothing());
 }
@@ -769,13 +769,13 @@ test "SmootherBank init and setTarget" {
             .range = .{ .min = 20, .max = 20000 },
         } },
     };
-    
+
     var bank = SmootherBank(2).init(&params);
-    
+
     // Initial values should match defaults
     try std.testing.expectApproxEqAbs(@as(f32, 0.0), bank.smoothers[0].current, 1e-6);
     try std.testing.expectApproxEqAbs(@as(f32, 1000.0), bank.smoothers[1].current, 1e-6);
-    
+
     // Set new targets
     bank.setTarget(0, 44100.0, 6.0);
     try std.testing.expect(bank.isSmoothing(0));
@@ -808,31 +808,31 @@ test "ParamAccess typed getters" {
             .labels = &.{ "Low", "Mid", "High" },
         } },
     };
-    
+
     var param_values = ParamValues(4).init(&params);
     var smoother_bank = SmootherBank(4).init(&params);
-    
+
     const access = ParamAccess(4, &params){
         .values = &param_values,
         .smoothers = &smoother_bank,
     };
-    
+
     // Test getFloat
     param_values.set(0, 0.75); // 0.75 normalized = 12.0 in [-24, 24] range
     const gain = access.getFloat(0);
     try std.testing.expectApproxEqAbs(@as(f32, 12.0), gain, 1e-4);
-    
+
     // Test getInt
     param_values.set(1, 0.5); // 0.5 normalized = ~10010 in [20, 20000] range
     const cutoff = access.getInt(1);
     try std.testing.expectEqual(@as(i32, 10010), cutoff);
-    
+
     // Test getBool
     param_values.set(2, 0.0);
     try std.testing.expect(!access.getBool(2));
     param_values.set(2, 1.0);
     try std.testing.expect(access.getBool(2));
-    
+
     // Test getChoice
     param_values.set(3, 0.5); // Middle choice
     const mode = access.getChoice(3);
@@ -849,7 +849,7 @@ test "Param toPlain conversion" {
     } };
     const float_plain = float_param.toPlain(0.75); // 0.75 normalized = 12.0 in [-24, 24] range
     try std.testing.expectApproxEqAbs(@as(f32, 12.0), float_plain, 1e-4);
-    
+
     // Int param
     const int_param = Param{ .int = .{
         .name = "Cutoff",
@@ -859,7 +859,7 @@ test "Param toPlain conversion" {
     } };
     const int_plain = int_param.toPlain(0.5); // 0.5 normalized = ~10010 in [20, 20000] range
     try std.testing.expectApproxEqAbs(@as(f32, 10010.0), int_plain, 1.0);
-    
+
     // Boolean param
     const bool_param = Param{ .boolean = .{
         .name = "Bypass",
@@ -868,7 +868,7 @@ test "Param toPlain conversion" {
     } };
     try std.testing.expectApproxEqAbs(@as(f32, 0.0), bool_param.toPlain(0.0), 1e-6);
     try std.testing.expectApproxEqAbs(@as(f32, 1.0), bool_param.toPlain(1.0), 1e-6);
-    
+
     // Choice param
     const choice_param = Param{ .choice = .{
         .name = "Mode",
@@ -879,4 +879,3 @@ test "Param toPlain conversion" {
     const choice_plain = choice_param.toPlain(0.5); // Middle choice
     try std.testing.expectApproxEqAbs(@as(f32, 1.0), choice_plain, 1e-6);
 }
-

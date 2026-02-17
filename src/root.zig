@@ -64,7 +64,7 @@ test {
     std.testing.refAllDecls(@import("core/params.zig"));
     std.testing.refAllDecls(@import("core/state.zig"));
     std.testing.refAllDecls(@import("core/plugin.zig"));
-    
+
     // Wrapper tests
     std.testing.refAllDecls(@import("wrappers/clap/entry.zig"));
     std.testing.refAllDecls(@import("wrappers/vst3/factory.zig"));

@@ -10,7 +10,7 @@ const plugin = @import("plugin.zig");
 /// Generate a CLAP plugin factory for plugin type `T`.
 pub fn ClapFactory(comptime T: type) type {
     const P = core.Plugin(T);
-    
+
     return struct {
         /// The plugin factory structure that the entry point returns.
         pub const plugin_factory = clap.PluginFactory{
@@ -18,12 +18,12 @@ pub fn ClapFactory(comptime T: type) type {
             .getPluginDescriptor = getPluginDescriptor,
             .createPlugin = createPlugin,
         };
-        
+
         /// Descriptor for this plugin (generated at comptime).
         const descriptor: clap.Plugin.Descriptor = blk: {
             // Build features array based on audio I/O layouts
             const features = generateFeatures();
-            
+
             break :blk clap.Plugin.Descriptor{
                 .clap_version = clap.Version{ .major = 1, .minor = 2, .revision = 2 },
                 .id = P.plugin_id.ptr,
@@ -37,10 +37,10 @@ pub fn ClapFactory(comptime T: type) type {
                 .features = &features,
             };
         };
-        
+
         /// Maximum number of features we might add (audio_effect/instrument + stereo + mono).
         const features_count = 3;
-        
+
         /// Generate the features array based on plugin configuration.
         fn generateFeatures() [features_count:null]?[*:0]const u8 {
             // Determine if this is an instrument or effect based on I/O layouts
@@ -52,7 +52,7 @@ pub fn ClapFactory(comptime T: type) type {
                 }
                 break :blk false;
             };
-            
+
             // Determine channel configuration
             const is_stereo = blk: {
                 for (P.audio_io_layouts) |layout| {
@@ -62,7 +62,7 @@ pub fn ClapFactory(comptime T: type) type {
                 }
                 break :blk false;
             };
-            
+
             const is_mono = blk: {
                 for (P.audio_io_layouts) |layout| {
                     if (layout.main_output_channels) |channels| {
@@ -71,14 +71,14 @@ pub fn ClapFactory(comptime T: type) type {
                 }
                 break :blk false;
             };
-            
+
             // Build features list
             var features: [features_count:null]?[*:0]const u8 = undefined;
             for (0..features_count + 1) |i| {
                 features[i] = null;
             }
             var idx: usize = 0;
-            
+
             if (is_instrument) {
                 features[idx] = clap.Plugin.features.instrument;
                 idx += 1;
@@ -86,30 +86,30 @@ pub fn ClapFactory(comptime T: type) type {
                 features[idx] = clap.Plugin.features.audio_effect;
                 idx += 1;
             }
-            
+
             if (is_stereo) {
                 features[idx] = clap.Plugin.features.stereo;
                 idx += 1;
             }
-            
+
             if (is_mono) {
                 features[idx] = clap.Plugin.features.mono;
                 idx += 1;
             }
-            
+
             return features;
         }
-        
+
         fn getPluginCount(_: *const clap.PluginFactory) callconv(.c) u32 {
             return 1;
         }
-        
+
         /// Get the descriptor for a plugin by index.
         fn getPluginDescriptor(_: *const clap.PluginFactory, index: u32) callconv(.c) ?*const clap.Plugin.Descriptor {
             if (index != 0) return null;
             return &descriptor;
         }
-        
+
         /// Create a plugin instance.
         fn createPlugin(
             _: *const clap.PluginFactory,
@@ -121,18 +121,18 @@ pub fn ClapFactory(comptime T: type) type {
             if (!std.mem.eql(u8, id_slice, P.plugin_id)) {
                 return null;
             }
-            
+
             // Allocate the plugin wrapper
             const wrapper = std.heap.page_allocator.create(plugin.PluginWrapper(T)) catch {
                 return null;
             };
-            
+
             // Initialize the wrapper
             wrapper.* = plugin.PluginWrapper(T).init(host) catch {
                 std.heap.page_allocator.destroy(wrapper);
                 return null;
             };
-            
+
             // Return pointer to the clap_plugin field (must be first field)
             return &wrapper.clap_plugin;
         }
@@ -148,27 +148,27 @@ test "ClapFactory compiles for test plugin" {
         pub const plugin_id: [:0]const u8 = "com.example.test";
         pub const audio_io_layouts = &[_]core.AudioIOLayout{core.AudioIOLayout.STEREO};
         pub const params = &[_]core.Param{};
-        
+
         pub fn init(_: *@This(), _: *const core.AudioIOLayout, _: *const core.BufferConfig) bool {
             return true;
         }
-        
+
         pub fn deinit(_: *@This()) void {}
-        
+
         pub fn process(_: *@This(), _: *core.Buffer, _: *core.AuxBuffers, _: *core.ProcessContext) core.ProcessStatus {
             return core.ProcessStatus.ok();
         }
     };
-    
+
     const Factory = ClapFactory(TestPlugin);
-    
+
     // Test descriptor generation
     try std.testing.expectEqualStrings("Test Plugin", std.mem.span(Factory.descriptor.name));
     try std.testing.expectEqualStrings("com.example.test", std.mem.span(Factory.descriptor.id));
-    
+
     // Test factory functions
     try std.testing.expectEqual(@as(u32, 1), Factory.plugin_factory.getPluginCount(&Factory.plugin_factory));
-    
+
     const desc = Factory.plugin_factory.getPluginDescriptor(&Factory.plugin_factory, 0);
     try std.testing.expect(desc != null);
 }

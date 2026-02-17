@@ -21,43 +21,78 @@ Inspired by [nih-plug](https://github.com/robbert-vdh/nih-plug) (Rust), z-plug p
 - API-agnostic plugin interface with comptime validation
 - Zero-copy buffer abstraction with three iteration strategies
 - Unified note/MIDI event system
-- Parameter system with atomic runtime storage
+- Parameter system with atomic runtime storage and smoothing
 - State persistence interface (save/load)
 - Audio I/O configuration and transport abstraction
 
-🔲 **Phase 3: Format Wrappers** — Planned
-- CLAP wrapper (C struct ABI)
-- VST3 wrapper (COM vtable ABI)
-- Build system `addPlugin()` helper
+✅ **Phase 3: Format Wrappers** — Complete
+- CLAP wrapper (C struct ABI) with entry point, factory, plugin, and extensions
+- VST3 wrapper (COM vtable ABI) with factory, component, processor, and controller
+- Build system `addPlugin()` helper with platform-specific bundling
+- VST3 macOS bundle creation (Info.plist, PkgInfo, correct directory structure)
+- Platform-specific module init/deinit exports
 
-🔲 **Phase 4: Examples and Polish** — Planned
-- Example plugins (gain, synth)
-- Documentation and tutorial expansion
-- CI/CD integration
+🔄 **Phase 4: Examples and Polish** — In Progress
+- ✅ Example gain plugin (loads and runs in DAWs)
+- ✅ Helper scripts for installing and signing plugins
+- 🔲 Additional example plugins (synth, effects)
+- 🔲 CI/CD integration
 
 ## Building
 
-This project requires Zig 0.15.2. The provided `flake.nix` sets up a development environment with zvm.
+This project requires Zig 0.15.2. The provided `flake.nix` sets up a development environment with Nix.
 
 ```bash
+# Activate the Zig 0.15.2 environment (if using Nix + direnv)
+direnv allow .
+eval "$(direnv export bash)"
+
 # Run tests
 zig build test
 
-# Future: Build a plugin (not yet implemented)
-# zig build -Dplugin=examples/gain
+# Build example plugins (outputs to zig-out/plugins/)
+zig build
+
+# Install plugins to system directories
+zig build install-plugins                # user directories (default)
+zig build install-plugins -Dsystem=true  # system directories (requires sudo)
+
+# Sign plugins on macOS (required for most DAWs)
+zig build sign-plugins
+
+# Uninstall plugins
+zig build uninstall-plugins                # user directories
+zig build uninstall-plugins -Dsystem=true  # system directories
 ```
+
+See [docs/getting-started.md](docs/getting-started.md) for detailed setup instructions.
 
 ## Project Structure
 
 ```
 src/
   core/            # Framework core (API-agnostic) ✅
+    plugin.zig     # Plugin interface & comptime validation
+    params.zig     # Parameter system with smoothing
+    buffer.zig     # Zero-copy audio buffer abstraction
+    events.zig     # Unified note/MIDI events
+    state.zig      # State persistence
+    audio_layout.zig # Audio I/O configuration
   bindings/
     clap/          # CLAP C API bindings (LGPL v3) ✅
     vst3/          # VST3 C API bindings (MIT) ✅
-  wrappers/        # Format-specific wrappers (planned)
+  wrappers/        # Format-specific wrappers ✅
+    clap/          # CLAP wrapper implementation
+    vst3/          # VST3 wrapper implementation
   root.zig         # Public API ✅
+examples/          # Example plugins ✅
+  gain.zig         # Simple gain plugin (CLAP + VST3)
 docs/              # High-level documentation ✅
+build.zig          # Build system with addPlugin() helper ✅
+build_tools/       # Plugin management utilities
+  install_plugins.zig     # Install plugins to system directories
+  sign_plugins.zig        # Code-sign plugins on macOS
+  uninstall_plugins.zig   # Remove installed plugins
 ```
 
 ## License and Attribution

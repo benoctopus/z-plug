@@ -22,7 +22,7 @@ pub const PFactoryInfo = extern struct {
     url: [kURLSize]u8,
     email: [kEmailSize]u8,
     flags: i32,
-    
+
     pub const FactoryFlags = enum(i32) {
         kNoFlags = 0,
         kClassesDiscardable = 1 << 0,
@@ -38,7 +38,7 @@ pub const PClassInfo = extern struct {
     cardinality: i32,
     category: [32]u8,
     name: [64]u8,
-    
+
     pub const ClassCardinality = enum(i32) {
         kManyInstances = 0x7FFFFFFF,
     };
@@ -76,7 +76,7 @@ pub const IPluginFactoryVtbl = extern struct {
     queryInterface: *const fn (*anyopaque, *const TUID, *?*anyopaque) callconv(.c) tresult,
     addRef: *const fn (*anyopaque) callconv(.c) u32,
     release: *const fn (*anyopaque) callconv(.c) u32,
-    
+
     // IPluginFactory methods
     getFactoryInfo: *const fn (*anyopaque, *PFactoryInfo) callconv(.c) tresult,
     countClasses: *const fn (*anyopaque) callconv(.c) i32,
@@ -96,13 +96,13 @@ pub const IPluginFactory2Vtbl = extern struct {
     queryInterface: *const fn (*anyopaque, *const TUID, *?*anyopaque) callconv(.c) tresult,
     addRef: *const fn (*anyopaque) callconv(.c) u32,
     release: *const fn (*anyopaque) callconv(.c) u32,
-    
+
     // IPluginFactory methods
     getFactoryInfo: *const fn (*anyopaque, *PFactoryInfo) callconv(.c) tresult,
     countClasses: *const fn (*anyopaque) callconv(.c) i32,
     getClassInfo: *const fn (*anyopaque, i32, *PClassInfo) callconv(.c) tresult,
     createInstance: *const fn (*anyopaque, FIDString, FIDString, *?*anyopaque) callconv(.c) tresult,
-    
+
     // IPluginFactory2 methods
     getClassInfo2: *const fn (*anyopaque, i32, *PClassInfo2) callconv(.c) tresult,
 };
@@ -119,16 +119,16 @@ pub const IPluginFactory3Vtbl = extern struct {
     queryInterface: *const fn (*anyopaque, *const TUID, *?*anyopaque) callconv(.c) tresult,
     addRef: *const fn (*anyopaque) callconv(.c) u32,
     release: *const fn (*anyopaque) callconv(.c) u32,
-    
+
     // IPluginFactory methods
     getFactoryInfo: *const fn (*anyopaque, *PFactoryInfo) callconv(.c) tresult,
     countClasses: *const fn (*anyopaque) callconv(.c) i32,
     getClassInfo: *const fn (*anyopaque, i32, *PClassInfo) callconv(.c) tresult,
     createInstance: *const fn (*anyopaque, FIDString, FIDString, *?*anyopaque) callconv(.c) tresult,
-    
+
     // IPluginFactory2 methods
     getClassInfo2: *const fn (*anyopaque, i32, *PClassInfo2) callconv(.c) tresult,
-    
+
     // IPluginFactory3 methods
     getClassInfoUnicode: *const fn (*anyopaque, i32, *PClassInfoW) callconv(.c) tresult,
     setHostContext: *const fn (*anyopaque, *anyopaque) callconv(.c) tresult,

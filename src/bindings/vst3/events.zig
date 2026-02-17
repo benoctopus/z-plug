@@ -103,7 +103,7 @@ pub const IEventListVtbl = extern struct {
     queryInterface: *const fn (*anyopaque, *const TUID, *?*anyopaque) callconv(.c) tresult,
     addRef: *const fn (*anyopaque) callconv(.c) u32,
     release: *const fn (*anyopaque) callconv(.c) u32,
-    
+
     // IEventList methods
     getEventCount: *const fn (*anyopaque) callconv(.c) i32,
     getEvent: *const fn (*anyopaque, i32, *Event) callconv(.c) tresult,

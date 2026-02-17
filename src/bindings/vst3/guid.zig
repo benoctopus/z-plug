@@ -112,7 +112,7 @@ test "eql compares correctly" {
     const guid1 = parseGuid("00000000-0000-0000-C000-000000000046");
     const guid2 = parseGuid("00000000-0000-0000-C000-000000000046");
     const guid3 = parseGuid("22888DDB-156E-45AE-8358-B34808190625");
-    
+
     try testing.expect(eql(guid1, guid2));
     try testing.expect(!eql(guid1, guid3));
 }

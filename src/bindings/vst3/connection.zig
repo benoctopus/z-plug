@@ -15,7 +15,7 @@ pub const IMessageVtbl = extern struct {
     queryInterface: *const fn (*anyopaque, *const TUID, *?*anyopaque) callconv(.c) tresult,
     addRef: *const fn (*anyopaque) callconv(.c) u32,
     release: *const fn (*anyopaque) callconv(.c) u32,
-    
+
     // IMessage methods
     getMessageID: *const fn (*anyopaque) callconv(.c) FIDString,
     setMessageID: *const fn (*anyopaque, FIDString) callconv(.c) void,
@@ -34,7 +34,7 @@ pub const IConnectionPointVtbl = extern struct {
     queryInterface: *const fn (*anyopaque, *const TUID, *?*anyopaque) callconv(.c) tresult,
     addRef: *const fn (*anyopaque) callconv(.c) u32,
     release: *const fn (*anyopaque) callconv(.c) u32,
-    
+
     // IConnectionPoint methods
     connect: *const fn (*anyopaque, *anyopaque) callconv(.c) tresult,
     disconnect: *const fn (*anyopaque, *anyopaque) callconv(.c) tresult,

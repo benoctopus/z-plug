@@ -11,7 +11,7 @@ const extensions = @import("extensions.zig");
 /// The first field MUST be `clap_plugin` so the host can cast the pointer correctly.
 pub fn PluginWrapper(comptime T: type) type {
     const P = core.Plugin(T);
-    
+
     // Pre-compute parameter IDs at comptime
     const param_ids = comptime blk: {
         var ids: [P.params.len]u32 = undefined;
@@ -20,65 +20,65 @@ pub fn PluginWrapper(comptime T: type) type {
         }
         break :blk ids;
     };
-    
+
     return struct {
         const Self = @This();
-        
+
         /// The CLAP plugin struct that the host interacts with.
         /// MUST be the first field for correct pointer casting.
         clap_plugin: clap.Plugin,
-        
+
         /// Host pointer for callbacks.
         host: *const clap.Host,
-        
+
         /// The actual plugin instance.
         plugin: T,
-        
+
         /// Runtime parameter values (lock-free atomic storage).
         param_values: core.ParamValues(P.params.len),
-        
+
         /// Smoother bank for parameter value smoothing.
         smoother_bank: core.SmootherBank(P.params.len),
-        
+
         /// Current buffer configuration.
         buffer_config: core.BufferConfig,
-        
+
         /// Current audio I/O layout.
         current_layout: core.AudioIOLayout,
-        
+
         /// Pre-allocated storage for input events.
         input_events_storage: [max_events]core.NoteEvent,
-        
+
         /// Pre-allocated storage for output events.
         output_events_storage: [max_events]core.NoteEvent,
-        
+
         /// Event output list for plugin to push events.
         event_output_list: core.EventOutputList,
-        
+
         /// Whether the plugin is currently activated.
         is_activated: bool,
-        
+
         /// Pre-allocated storage for auxiliary input buffers.
         /// [bus_index][channel_index][sample_index]
         aux_input_storage: [max_aux_buses][max_channels][max_buffer_size]f32,
-        
+
         /// Pre-allocated Buffer structs for auxiliary inputs.
         aux_input_buffers: [max_aux_buses]core.Buffer,
-        
+
         /// Channel slice arrays for auxiliary input buffers.
         aux_input_channel_slices: [max_aux_buses][max_channels][]f32,
-        
+
         /// Pre-allocated Buffer structs for auxiliary outputs.
         aux_output_buffers: [max_aux_buses]core.Buffer,
-        
+
         /// Channel slice arrays for auxiliary output buffers.
         aux_output_channel_slices: [max_aux_buses][max_channels][]f32,
-        
+
         const max_events = 1024;
         const max_aux_buses = 8;
         const max_channels = 32;
         const max_buffer_size = 8192;
-        
+
         /// Initialize a new plugin wrapper.
         pub fn init(host: *const clap.Host) !Self {
             var self = Self{
@@ -101,7 +101,7 @@ pub fn PluginWrapper(comptime T: type) type {
                 .aux_output_buffers = undefined,
                 .aux_output_channel_slices = undefined,
             };
-            
+
             // Initialize the clap_plugin struct with function pointers
             self.clap_plugin = clap.Plugin{
                 .descriptor = undefined, // Set by factory
@@ -117,41 +117,41 @@ pub fn PluginWrapper(comptime T: type) type {
                 .getExtension = pluginGetExtension,
                 .onMainThread = pluginOnMainThread,
             };
-            
+
             return self;
         }
-        
+
         /// Get the wrapper from a clap_plugin pointer.
         fn fromPlugin(plugin: *const clap.Plugin) *Self {
             return @ptrCast(@alignCast(plugin.plugin_data));
         }
-        
+
         // -----------------------------------------------------------------------
         // CLAP Plugin Callbacks
         // -----------------------------------------------------------------------
-        
+
         fn pluginInit(plugin: *const clap.Plugin) callconv(.c) bool {
             const self = fromPlugin(plugin);
-            
+
             // Initialize the plugin with the default layout
             const success = P.init(&self.plugin, &self.current_layout, &self.buffer_config);
             if (!success) {
                 return false;
             }
-            
+
             return true;
         }
-        
+
         fn pluginDestroy(plugin: *const clap.Plugin) callconv(.c) void {
             const self = fromPlugin(plugin);
-            
+
             // Deinitialize the plugin
             P.deinit(&self.plugin);
-            
+
             // Free the wrapper allocation
             std.heap.page_allocator.destroy(self);
         }
-        
+
         fn pluginActivate(
             plugin: *const clap.Plugin,
             sample_rate: f64,
@@ -159,7 +159,7 @@ pub fn PluginWrapper(comptime T: type) type {
             max_frames_count: u32,
         ) callconv(.c) bool {
             const self = fromPlugin(plugin);
-            
+
             // Store buffer configuration
             self.buffer_config = core.BufferConfig{
                 .sample_rate = @floatCast(sample_rate),
@@ -167,52 +167,52 @@ pub fn PluginWrapper(comptime T: type) type {
                 .max_buffer_size = max_frames_count,
                 .process_mode = .realtime,
             };
-            
+
             // Initialize all smoothers with current parameter values
             for (P.params, 0..) |param, i| {
                 const normalized = self.param_values.get(i);
                 const plain_value = param.toPlain(normalized);
                 self.smoother_bank.reset(i, plain_value);
             }
-            
+
             // Call plugin reset
             P.reset(&self.plugin);
-            
+
             self.is_activated = true;
             return true;
         }
-        
+
         fn pluginDeactivate(plugin: *const clap.Plugin) callconv(.c) void {
             const self = fromPlugin(plugin);
             self.is_activated = false;
-            
+
             // Call plugin reset
             P.reset(&self.plugin);
         }
-        
+
         fn pluginStartProcessing(plugin: *const clap.Plugin) callconv(.c) bool {
             _ = plugin;
             return true;
         }
-        
+
         fn pluginStopProcessing(plugin: *const clap.Plugin) callconv(.c) void {
             _ = plugin;
         }
-        
+
         fn pluginReset(plugin: *const clap.Plugin) callconv(.c) void {
             const self = fromPlugin(plugin);
             P.reset(&self.plugin);
         }
-        
+
         fn pluginProcess(plugin: *const clap.Plugin, process: *const clap.Process) callconv(.c) clap.Process.Status {
             const self = fromPlugin(plugin);
-            
+
             const frames_count = process.frames_count;
-            
+
             // Map audio buffers (zero-copy)
             var channel_slices_in: [32][]f32 = undefined;
             var channel_slices_out: [32][]f32 = undefined;
-            
+
             const input_count = if (process.audio_inputs_count > 0) blk: {
                 const clap_buf = process.audio_inputs[0];
                 const count = @min(clap_buf.channel_count, 32);
@@ -221,7 +221,7 @@ pub fn PluginWrapper(comptime T: type) type {
                 }
                 break :blk @as(usize, @intCast(count));
             } else 0;
-            
+
             const output_count = if (process.audio_outputs_count > 0) blk: {
                 const clap_buf = process.audio_outputs[0];
                 const count = @min(clap_buf.channel_count, 32);
@@ -230,7 +230,7 @@ pub fn PluginWrapper(comptime T: type) type {
                 }
                 break :blk @as(usize, @intCast(count));
             } else 0;
-            
+
             // In-place processing: copy input to output if pointers differ
             const common_channels = @min(input_count, output_count);
             for (0..common_channels) |i| {
@@ -238,32 +238,32 @@ pub fn PluginWrapper(comptime T: type) type {
                     @memcpy(channel_slices_out[i], channel_slices_in[i]);
                 }
             }
-            
+
             // Zero-fill extra output channels (if output has more channels than input)
             for (input_count..output_count) |i| {
                 @memset(channel_slices_out[i], 0.0);
             }
-            
+
             const output_slices = channel_slices_out[0..output_count];
-            
+
             var buffer = core.Buffer{
                 .channel_data = output_slices,
                 .num_samples = @intCast(frames_count),
             };
-            
+
             // Map auxiliary buffers
             var aux_input_count: usize = 0;
             var aux_output_count: usize = 0;
-            
+
             // Process auxiliary input buses (index > 0)
             if (process.audio_inputs_count > 1) {
                 const aux_buses_available = @min(process.audio_inputs_count - 1, max_aux_buses);
                 for (1..process.audio_inputs_count) |bus_idx| {
                     if (aux_input_count >= max_aux_buses) break;
-                    
+
                     const clap_buf = process.audio_inputs[bus_idx];
                     const ch_count = @min(clap_buf.channel_count, max_channels);
-                    
+
                     // Copy auxiliary input data to owned storage
                     for (0..@intCast(ch_count)) |ch_idx| {
                         const src = clap_buf.data32.?[ch_idx][0..frames_count];
@@ -271,7 +271,7 @@ pub fn PluginWrapper(comptime T: type) type {
                         @memcpy(dst, src);
                         self.aux_input_channel_slices[aux_input_count][ch_idx] = dst;
                     }
-                    
+
                     self.aux_input_buffers[aux_input_count] = core.Buffer{
                         .channel_data = self.aux_input_channel_slices[aux_input_count][0..@intCast(ch_count)],
                         .num_samples = @intCast(frames_count),
@@ -280,21 +280,21 @@ pub fn PluginWrapper(comptime T: type) type {
                     _ = aux_buses_available;
                 }
             }
-            
+
             // Process auxiliary output buses (index > 0)
             if (process.audio_outputs_count > 1) {
                 const aux_buses_available = @min(process.audio_outputs_count - 1, max_aux_buses);
                 for (1..process.audio_outputs_count) |bus_idx| {
                     if (aux_output_count >= max_aux_buses) break;
-                    
+
                     const clap_buf = process.audio_outputs[bus_idx];
                     const ch_count = @min(clap_buf.channel_count, max_channels);
-                    
+
                     // Point auxiliary output buffers directly to host output buffers
                     for (0..@intCast(ch_count)) |ch_idx| {
                         self.aux_output_channel_slices[aux_output_count][ch_idx] = clap_buf.data32.?[ch_idx][0..frames_count];
                     }
-                    
+
                     self.aux_output_buffers[aux_output_count] = core.Buffer{
                         .channel_data = self.aux_output_channel_slices[aux_output_count][0..@intCast(ch_count)],
                         .num_samples = @intCast(frames_count),
@@ -303,24 +303,24 @@ pub fn PluginWrapper(comptime T: type) type {
                     _ = aux_buses_available;
                 }
             }
-            
+
             var aux = core.AuxBuffers{
                 .inputs = self.aux_input_buffers[0..aux_input_count],
                 .outputs = self.aux_output_buffers[0..aux_output_count],
             };
-            
+
             // Translate input events
             var input_event_count: usize = 0;
             const event_count = process.in_events.size(process.in_events);
             for (0..event_count) |i| {
                 if (input_event_count >= max_events) break;
-                
+
                 const event_header = process.in_events.get(process.in_events, @intCast(i));
                 if (translateInputEvent(event_header, &self.input_events_storage[input_event_count], self)) {
                     input_event_count += 1;
                 }
             }
-            
+
             // TODO: Sample-accurate automation (P.sample_accurate_automation)
             // When enabled, collect all param_value events with their sample offsets,
             // sort by offset, then loop:
@@ -328,7 +328,7 @@ pub fn PluginWrapper(comptime T: type) type {
             //   2. Call P.process() for sub-block [block_start, next_change)
             //   3. Advance block_start
             // For now, parameter changes apply at the start of the block (via translateInputEvent).
-            
+
             // Build transport info
             const transport = if (process.transport) |t| blk: {
                 break :blk core.Transport{
@@ -351,12 +351,12 @@ pub fn PluginWrapper(comptime T: type) type {
                 .loop_start_beats = null,
                 .loop_end_beats = null,
             };
-            
+
             // Set up event output list
             self.event_output_list = core.EventOutputList{
                 .events = &self.output_events_storage,
             };
-            
+
             // Build process context
             var context = core.ProcessContext{
                 .transport = transport,
@@ -367,15 +367,15 @@ pub fn PluginWrapper(comptime T: type) type {
                 .smoothers_ptr = &self.smoother_bank,
                 .params_meta = P.params,
             };
-            
+
             // Call plugin process
             const status = P.process(&self.plugin, &buffer, &aux, &context);
-            
+
             // Translate output events
             for (self.event_output_list.slice()) |*event| {
                 translateOutputEvent(event, process.out_events);
             }
-            
+
             // Map ProcessStatus to CLAP status
             return switch (status) {
                 .normal => .@"continue",
@@ -385,43 +385,43 @@ pub fn PluginWrapper(comptime T: type) type {
                 .err => .@"error",
             };
         }
-        
+
         fn pluginGetExtension(plugin: *const clap.Plugin, id: [*:0]const u8) callconv(.c) ?*const anyopaque {
             const self = fromPlugin(plugin);
             const id_slice = std.mem.span(id);
-            
+
             if (std.mem.eql(u8, id_slice, clap.ext.audio_ports.id)) {
                 return @ptrCast(&extensions.Extensions(T).audio_ports);
             }
-            
+
             if (std.mem.eql(u8, id_slice, clap.ext.note_ports.id)) {
                 if (P.midi_input != .none or P.midi_output != .none) {
                     return @ptrCast(&extensions.Extensions(T).note_ports);
                 }
             }
-            
+
             if (std.mem.eql(u8, id_slice, clap.ext.params.id)) {
                 if (P.params.len > 0) {
                     return @ptrCast(&extensions.Extensions(T).params);
                 }
             }
-            
+
             if (std.mem.eql(u8, id_slice, clap.ext.state.id)) {
                 return @ptrCast(&extensions.Extensions(T).state);
             }
-            
+
             _ = self;
             return null;
         }
-        
+
         fn pluginOnMainThread(plugin: *const clap.Plugin) callconv(.c) void {
             _ = plugin;
         }
-        
+
         // -----------------------------------------------------------------------
         // Event Translation Helpers
         // -----------------------------------------------------------------------
-        
+
         fn translateInputEvent(header: *const clap.events.Header, out: *core.NoteEvent, self: *Self) bool {
             switch (header.type) {
                 .note_on => {
@@ -481,7 +481,7 @@ pub fn PluginWrapper(comptime T: type) type {
                                 },
                             };
                             self.param_values.set(idx, normalized);
-                            
+
                             // Update smoother target with the plain value
                             const plain_value: f32 = @floatCast(event.value);
                             self.smoother_bank.setTarget(idx, self.buffer_config.sample_rate, plain_value);
@@ -492,7 +492,7 @@ pub fn PluginWrapper(comptime T: type) type {
                 },
                 .note_expression => {
                     const event: *const clap.events.NoteExpression = @ptrCast(@alignCast(header));
-                    
+
                     const poly_data = core.PolyValueData{
                         .timing = header.sample_offset,
                         .voice_id = if (event.note_id == .unspecified) null else @intFromEnum(event.note_id),
@@ -500,7 +500,7 @@ pub fn PluginWrapper(comptime T: type) type {
                         .note = @intCast(@intFromEnum(event.key)),
                         .value = @floatCast(event.value),
                     };
-                    
+
                     out.* = switch (event.expression_id) {
                         .pressure => core.NoteEvent{ .poly_pressure = poly_data },
                         .tuning => core.NoteEvent{ .poly_tuning = poly_data },
@@ -516,7 +516,7 @@ pub fn PluginWrapper(comptime T: type) type {
                     const event: *const clap.events.Midi = @ptrCast(@alignCast(header));
                     const status = event.data[0] & 0xF0;
                     const channel: u8 = @intCast(event.data[0] & 0x0F);
-                    
+
                     switch (status) {
                         0xB0 => { // Control Change
                             out.* = core.NoteEvent{
@@ -570,7 +570,7 @@ pub fn PluginWrapper(comptime T: type) type {
                 else => return false,
             }
         }
-        
+
         fn translateOutputEvent(event: *const core.NoteEvent, out_events: *const clap.events.OutputEvents) void {
             switch (event.*) {
                 .note_on => |data| {
@@ -809,7 +809,7 @@ pub fn PluginWrapper(comptime T: type) type {
                     const clamped = @min(@max(bend_int, 0), 16383);
                     const lsb: u8 = @intCast(clamped & 0x7F);
                     const msb: u8 = @intCast((clamped >> 7) & 0x7F);
-                    
+
                     var clap_event = clap.events.Midi{
                         .header = .{
                             .size = @sizeOf(clap.events.Midi),

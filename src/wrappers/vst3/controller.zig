@@ -8,7 +8,7 @@ const core = @import("../../root.zig");
 /// VST3 controller for plugin type `T`.
 pub fn Vst3Controller(comptime T: type) type {
     const P = core.Plugin(T);
-    
+
     // Pre-compute parameter IDs at comptime
     const param_ids = comptime blk: {
         var ids: [P.params.len]u32 = undefined;
@@ -17,16 +17,16 @@ pub fn Vst3Controller(comptime T: type) type {
         }
         break :blk ids;
     };
-    
+
     return struct {
         const Self = @This();
-        
+
         /// Controller vtable (IEditController interface).
         controller_vtbl: vst3.controller.IEditController,
-        
+
         /// Pointer to shared parameter values (from component).
         param_values: ?*core.ParamValues(P.params.len),
-        
+
         /// Initialize the controller.
         pub fn init() Self {
             return Self{
@@ -36,11 +36,11 @@ pub fn Vst3Controller(comptime T: type) type {
                 .param_values = null,
             };
         }
-        
+
         // -------------------------------------------------------------------
         // Vtable Instance
         // -------------------------------------------------------------------
-        
+
         const controller_vtbl_instance = vst3.controller.IEditControllerVtbl{
             .queryInterface = controllerQueryInterface,
             .addRef = controllerAddRef,
@@ -61,62 +61,62 @@ pub fn Vst3Controller(comptime T: type) type {
             .setComponentHandler = setComponentHandler,
             .createView = createView,
         };
-        
+
         // -------------------------------------------------------------------
         // Helper Functions
         // -------------------------------------------------------------------
-        
+
         fn fromController(ctrl: *anyopaque) *Self {
             const controller_ptr: *vst3.controller.IEditController = @ptrCast(@alignCast(ctrl));
             return @fieldParentPtr("controller_vtbl", controller_ptr);
         }
-        
+
         // -------------------------------------------------------------------
         // IEditController Implementation
         // -------------------------------------------------------------------
-        
+
         fn controllerQueryInterface(_: *anyopaque, _: *const vst3.TUID, obj: *?*anyopaque) callconv(.c) vst3.tresult {
             // Controller is part of the component in single-component model
             // This should not be called directly
             obj.* = null;
             return vst3.types.kNoInterface;
         }
-        
+
         fn controllerAddRef(_: *anyopaque) callconv(.c) u32 {
             // Controller is part of the component
             return 1;
         }
-        
+
         fn controllerRelease(_: *anyopaque) callconv(.c) u32 {
             // Controller is part of the component
             return 1;
         }
-        
+
         fn controllerInitialize(_: *anyopaque, _: *anyopaque) callconv(.c) vst3.tresult {
             return vst3.types.kResultOk;
         }
-        
+
         fn controllerTerminate(_: *anyopaque) callconv(.c) vst3.tresult {
             return vst3.types.kResultOk;
         }
-        
+
         fn setComponentState(_: *anyopaque, _: *vst3.component.IBStream) callconv(.c) vst3.tresult {
             // State is already loaded by the component
             return vst3.types.kResultOk;
         }
-        
+
         fn setState(_: *anyopaque, _: *vst3.component.IBStream) callconv(.c) vst3.tresult {
             return vst3.types.kResultOk;
         }
-        
+
         fn getState(_: *anyopaque, _: *vst3.component.IBStream) callconv(.c) vst3.tresult {
             return vst3.types.kResultOk;
         }
-        
+
         fn getParameterCount(_: *anyopaque) callconv(.c) i32 {
             return @intCast(P.params.len);
         }
-        
+
         fn getParameterInfo(
             _: *anyopaque,
             param_index: i32,
@@ -125,15 +125,15 @@ pub fn Vst3Controller(comptime T: type) type {
             if (param_index < 0 or param_index >= P.params.len) {
                 return vst3.types.kResultFalse;
             }
-            
+
             // Return early if no params
             if (P.params.len == 0) {
                 return vst3.types.kResultFalse;
             }
-            
+
             const param = P.params[@intCast(param_index)];
             const param_id = param_ids[@intCast(param_index)];
-            
+
             info.* = vst3.controller.ParameterInfo{
                 .id = param_id,
                 .title = undefined,
@@ -155,7 +155,7 @@ pub fn Vst3Controller(comptime T: type) type {
                     break :blk flags;
                 },
             };
-            
+
             // Convert title to UTF-16
             @memset(&info.title, 0);
             const name = param.name();
@@ -164,10 +164,10 @@ pub fn Vst3Controller(comptime T: type) type {
             while (i < name.len and i < 128) : (i += 1) {
                 info.title[i] = name[i];
             }
-            
+
             // Short title (same as title for now)
             @memcpy(&info.short_title, &info.title);
-            
+
             // Units
             @memset(&info.units, 0);
             const unit = switch (param) {
@@ -181,10 +181,10 @@ pub fn Vst3Controller(comptime T: type) type {
                     info.units[j] = unit[j];
                 }
             }
-            
+
             return vst3.types.kResultOk;
         }
-        
+
         fn getParamStringByValue(
             _: *anyopaque,
             id: vst3.types.ParamID,
@@ -216,21 +216,21 @@ pub fn Vst3Controller(comptime T: type) type {
                             break :blk "?";
                         },
                     };
-                    
+
                     // Convert to UTF-16
                     @memset(string, 0);
                     var j: usize = 0;
                     while (j < text.len and j < 128) : (j += 1) {
                         string[j] = text[j];
                     }
-                    
+
                     return vst3.types.kResultOk;
                 }
             }
-            
+
             return vst3.types.kResultFalse;
         }
-        
+
         fn getParamValueByString(
             _: *anyopaque,
             _: vst3.types.ParamID,
@@ -240,7 +240,7 @@ pub fn Vst3Controller(comptime T: type) type {
             // TODO: Implement string-to-value parsing
             return vst3.types.kNotImplemented;
         }
-        
+
         fn normalizedParamToPlain(
             _: *anyopaque,
             id: vst3.types.ParamID,
@@ -261,10 +261,10 @@ pub fn Vst3Controller(comptime T: type) type {
                     };
                 }
             }
-            
+
             return value_normalized;
         }
-        
+
         fn plainParamToNormalized(
             _: *anyopaque,
             id: vst3.types.ParamID,
@@ -286,16 +286,16 @@ pub fn Vst3Controller(comptime T: type) type {
                     };
                 }
             }
-            
+
             return plain_value;
         }
-        
+
         fn getParamNormalized(
             self: *anyopaque,
             id: vst3.types.ParamID,
         ) callconv(.c) vst3.types.ParamValue {
             const controller = fromController(self);
-            
+
             if (controller.param_values) |param_values| {
                 // Find parameter by ID
                 for (P.params, 0..) |_, idx| {
@@ -305,17 +305,17 @@ pub fn Vst3Controller(comptime T: type) type {
                     }
                 }
             }
-            
+
             return 0.0;
         }
-        
+
         fn setParamNormalized(
             self: *anyopaque,
             id: vst3.types.ParamID,
             value: vst3.types.ParamValue,
         ) callconv(.c) vst3.tresult {
             const controller = fromController(self);
-            
+
             if (controller.param_values) |param_values| {
                 // Find parameter by ID
                 for (P.params, 0..) |_, idx| {
@@ -326,14 +326,14 @@ pub fn Vst3Controller(comptime T: type) type {
                     }
                 }
             }
-            
+
             return vst3.types.kResultFalse;
         }
-        
+
         fn setComponentHandler(_: *anyopaque, _: *anyopaque) callconv(.c) vst3.tresult {
             return vst3.types.kResultOk;
         }
-        
+
         fn createView(_: *anyopaque, _: vst3.types.FIDString) callconv(.c) ?*vst3.controller.IPlugView {
             // GUI not implemented yet
             return null;

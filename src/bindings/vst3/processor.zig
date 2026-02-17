@@ -35,7 +35,7 @@ pub const AudioBusBuffers = extern struct {
 pub const FrameRate = extern struct {
     frames_per_second: u32,
     flags: u32,
-    
+
     pub const FrameRateFlags = enum(u32) {
         kPullDownRate = 1 << 0,
         kDropRate = 1 << 1,
@@ -67,7 +67,7 @@ pub const ProcessContext = extern struct {
     smpte_offset_subframes: i32,
     frame_rate: FrameRate,
     samples_to_next_clock: i32,
-    
+
     pub const StatesAndFlags = enum(u32) {
         kPlaying = 1 << 1,
         kCycleActive = 1 << 2,
@@ -116,7 +116,7 @@ pub const IAudioProcessorVtbl = extern struct {
     queryInterface: *const fn (*anyopaque, *const TUID, *?*anyopaque) callconv(.c) tresult,
     addRef: *const fn (*anyopaque) callconv(.c) u32,
     release: *const fn (*anyopaque) callconv(.c) u32,
-    
+
     // IAudioProcessor methods
     setBusArrangements: *const fn (*anyopaque, [*]SpeakerArrangement, i32, [*]SpeakerArrangement, i32) callconv(.c) tresult,
     getBusArrangement: *const fn (*anyopaque, types.BusDirection, i32, *SpeakerArrangement) callconv(.c) tresult,

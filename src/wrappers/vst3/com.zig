@@ -18,18 +18,18 @@ const vst3 = @import("../../bindings/vst3/root.zig");
 pub fn ComObject(comptime StateType: type, comptime interfaces: []const InterfaceDesc) type {
     return struct {
         const Self = @This();
-        
+
         /// Reference count for COM lifetime management.
         ref_count: std.atomic.Value(u32),
-        
+
         /// The actual state/data for this COM object.
         state: StateType,
-        
+
         pub const InterfaceDesc = struct {
             iid: vst3.TUID,
             vtbl_field: []const u8,
         };
-        
+
         /// Initialize the COM object with ref_count = 1.
         pub fn init(state: StateType) Self {
             return Self{
@@ -37,11 +37,11 @@ pub fn ComObject(comptime StateType: type, comptime interfaces: []const Interfac
                 .state = state,
             };
         }
-        
+
         /// Generate queryInterface implementation for this object.
         pub fn queryInterface(self: *anyopaque, iid: *const vst3.TUID, obj: *?*anyopaque) callconv(.c) vst3.tresult {
             const self_ptr: *Self = @ptrCast(@alignCast(self));
-            
+
             // Check against each supported interface
             inline for (interfaces) |interface| {
                 if (vst3.guid.eql(iid.*, interface.iid)) {
@@ -52,7 +52,7 @@ pub fn ComObject(comptime StateType: type, comptime interfaces: []const Interfac
                     return vst3.types.kResultOk;
                 }
             }
-            
+
             // Check for FUnknown base
             if (vst3.guid.eql(iid.*, vst3.guid.IID_FUnknown)) {
                 // Return first interface as FUnknown
@@ -61,29 +61,29 @@ pub fn ComObject(comptime StateType: type, comptime interfaces: []const Interfac
                 obj.* = @ptrCast(first_vtbl);
                 return vst3.types.kResultOk;
             }
-            
+
             obj.* = null;
             return vst3.types.kNoInterface;
         }
-        
+
         /// Increment reference count.
         pub fn addRef(self: *anyopaque) callconv(.c) u32 {
             const self_ptr: *Self = @ptrCast(@alignCast(self));
             const prev = self_ptr.ref_count.fetchAdd(1, .monotonic);
             return prev + 1;
         }
-        
+
         /// Decrement reference count and free if it reaches zero.
         pub fn release(self: *anyopaque) callconv(.c) u32 {
             const self_ptr: *Self = @ptrCast(@alignCast(self));
             const prev = self_ptr.ref_count.fetchSub(1, .monotonic);
             const new_count = prev - 1;
-            
+
             if (new_count == 0) {
                 // Free the object
                 std.heap.page_allocator.destroy(self_ptr);
             }
-            
+
             return new_count;
         }
     };
@@ -102,15 +102,15 @@ test "ComObject basic reference counting" {
     const TestState = struct {
         value: i32,
     };
-    
+
     const TestCom = ComObject(TestState, &.{});
-    
+
     var obj = TestCom.init(TestState{ .value = 42 });
     try std.testing.expectEqual(@as(u32, 1), obj.ref_count.load(.monotonic));
-    
+
     const new_ref = TestCom.addRef(&obj);
     try std.testing.expectEqual(@as(u32, 2), new_ref);
-    
+
     const after_release = TestCom.release(&obj);
     try std.testing.expectEqual(@as(u32, 1), after_release);
 }

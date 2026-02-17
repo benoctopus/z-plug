@@ -24,7 +24,7 @@ pub const IPlugViewVtbl = extern struct {
     queryInterface: *const fn (*anyopaque, *const TUID, *?*anyopaque) callconv(.c) tresult,
     addRef: *const fn (*anyopaque) callconv(.c) u32,
     release: *const fn (*anyopaque) callconv(.c) u32,
-    
+
     // IPlugView methods
     isPlatformTypeSupported: *const fn (*anyopaque, types.FIDString) callconv(.c) tresult,
     attached: *const fn (*anyopaque, *anyopaque, types.FIDString) callconv(.c) tresult,

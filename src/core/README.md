@@ -30,7 +30,7 @@ Plugin authors import these types via `@import("z_plug")`, which re-exports from
 ### Plugin Interface
 
 - **`Plugin(comptime T)`** — Comptime function that validates a plugin struct `T` at compile time using duck-typing (similar to `std.mem.Allocator` pattern). Emits clear `@compileError` messages for missing or wrong-typed declarations.
-- **`ProcessContext`** — Passed to `process`, contains transport info, input events, output event list, sample rate.
+- **`ProcessContext`** — Passed to `process`, contains transport info, input events, output event list, sample rate, and parameter access methods (`getFloat`, `getInt`, `getBool`, `getChoice`, `nextSmoothed`).
 - **`ProcessStatus`** — Return type from `process`: `normal`, `silence`, `tail`, `keep_alive`, `err`.
 - **`EventOutputList`** — Bounded push-only list for output events.
 
@@ -56,6 +56,10 @@ Plugin authors import these types via `@import("z_plug")`, which re-exports from
 - **`FloatRange` / `IntRange`** — Value ranges with normalize/unnormalize/clamp methods.
 - **`ParamFlags`** — Packed struct controlling automation, modulation, visibility, bypass.
 - **`ParamValues(comptime N)`** — Lock-free atomic storage for runtime parameter values. Uses `std.atomic.Value(f32)` for thread-safe access between main and audio threads.
+- **`SmoothingStyle`** — Tagged union for parameter smoothing: `.linear` (ms), `.exponential` (ms), `.none`.
+- **`Smoother`** — Single-parameter smoother with configurable style and step rate.
+- **`SmootherBank(comptime N)`** — Collection of N smoothers for plugin parameters.
+- **`ParamAccess`** — Helper for accessing parameter values in the audio thread.
 - **`idHash(comptime id)`** — Stable FNV-1a hash for generating VST3 `ParamID` from string IDs.
 
 ### State Persistence

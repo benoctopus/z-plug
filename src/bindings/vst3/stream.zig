@@ -22,7 +22,7 @@ pub const IBStreamVtbl = extern struct {
     queryInterface: *const fn (*anyopaque, *const TUID, *?*anyopaque) callconv(.c) tresult,
     addRef: *const fn (*anyopaque) callconv(.c) u32,
     release: *const fn (*anyopaque) callconv(.c) u32,
-    
+
     // IBStream methods
     read: *const fn (*anyopaque, *anyopaque, i32, *i32) callconv(.c) tresult,
     write: *const fn (*anyopaque, *anyopaque, i32, *i32) callconv(.c) tresult,

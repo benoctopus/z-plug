@@ -318,4 +318,72 @@ pub fn build(b: *std.Build) void {
     //
     // Lastly, the Zig build system is relatively simple and self-contained,
     // and reading its source code will allow you to master it.
+
+    // Plugin management steps
+    setupPluginManagementSteps(b, target);
+}
+
+/// Setup plugin installation, uninstallation, and signing build steps.
+fn setupPluginManagementSteps(b: *std.Build, target: std.Build.ResolvedTarget) void {
+    const install_system = b.option(bool, "system", "Install to system directories (requires sudo on macOS/Linux)") orelse false;
+
+    // Install plugins step
+    const install_plugins_step = b.step("install-plugins", "Install built plugins to OS-standard plugin directories");
+    const install_cmd = b.addSystemCommand(&[_][]const u8{"echo"});
+    install_cmd.addArg("Installing plugins...");
+    install_cmd.step.dependOn(b.getInstallStep());
+    
+    const install_run = b.addRunArtifact(b.addExecutable(.{
+        .name = "install_plugins",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("build_tools/install_plugins.zig"),
+            .target = target,
+            .optimize = .ReleaseFast,
+        }),
+    }));
+    
+    if (install_system) {
+        install_run.addArg("--system");
+    } else {
+        install_run.addArg("--user");
+    }
+    install_run.step.dependOn(&install_cmd.step);
+    install_plugins_step.dependOn(&install_run.step);
+
+    // Uninstall plugins step
+    const uninstall_plugins_step = b.step("uninstall-plugins", "Uninstall plugins from OS-standard plugin directories");
+    const uninstall_run = b.addRunArtifact(b.addExecutable(.{
+        .name = "uninstall_plugins",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("build_tools/uninstall_plugins.zig"),
+            .target = target,
+            .optimize = .ReleaseFast,
+        }),
+    }));
+    
+    if (install_system) {
+        uninstall_run.addArg("--system");
+    } else {
+        uninstall_run.addArg("--user");
+    }
+    uninstall_plugins_step.dependOn(&uninstall_run.step);
+
+    // Sign plugins step (macOS only)
+    if (target.result.os.tag == .macos) {
+        const sign_plugins_step = b.step("sign-plugins", "Code-sign plugins with ad-hoc signature (macOS only)");
+        const sign_cmd = b.addSystemCommand(&[_][]const u8{"echo"});
+        sign_cmd.addArg("Signing plugins...");
+        sign_cmd.step.dependOn(b.getInstallStep());
+        
+        const sign_run = b.addRunArtifact(b.addExecutable(.{
+            .name = "sign_plugins",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("build_tools/sign_plugins.zig"),
+                .target = target,
+                .optimize = .ReleaseFast,
+            }),
+        }));
+        sign_run.step.dependOn(&sign_cmd.step);
+        sign_plugins_step.dependOn(&sign_run.step);
+    }
 }

@@ -22,7 +22,7 @@ pub const BusInfo = extern struct {
     name: String128,
     bus_type: BusType,
     flags: u32,
-    
+
     pub const BusFlags = enum(u32) {
         kDefaultActive = 1 << 0,
         kIsControlVoltage = 1 << 1,
@@ -42,7 +42,7 @@ pub const IPluginBaseVtbl = extern struct {
     queryInterface: *const fn (*anyopaque, *const TUID, *?*anyopaque) callconv(.c) tresult,
     addRef: *const fn (*anyopaque) callconv(.c) u32,
     release: *const fn (*anyopaque) callconv(.c) u32,
-    
+
     // IPluginBase methods
     initialize: *const fn (*anyopaque, *anyopaque) callconv(.c) tresult,
     terminate: *const fn (*anyopaque) callconv(.c) tresult,
@@ -65,11 +65,11 @@ pub const IComponentVtbl = extern struct {
     queryInterface: *const fn (*anyopaque, *const TUID, *?*anyopaque) callconv(.c) tresult,
     addRef: *const fn (*anyopaque) callconv(.c) u32,
     release: *const fn (*anyopaque) callconv(.c) u32,
-    
+
     // IPluginBase methods
     initialize: *const fn (*anyopaque, *anyopaque) callconv(.c) tresult,
     terminate: *const fn (*anyopaque) callconv(.c) tresult,
-    
+
     // IComponent methods
     getControllerClassId: *const fn (*anyopaque, *TUID) callconv(.c) tresult,
     setIoMode: *const fn (*anyopaque, types.IoMode) callconv(.c) tresult,

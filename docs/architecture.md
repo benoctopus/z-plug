@@ -146,6 +146,8 @@ The plugin sees a simple `[]const NoteEvent` slice, agnostic of the underlying f
 
 See each module's `README.md` for detailed structure:
 - [src/core/README.md](../src/core/README.md)
+- [src/wrappers/clap/README.md](../src/wrappers/clap/README.md)
+- [src/wrappers/vst3/README.md](../src/wrappers/vst3/README.md)
 - [src/bindings/clap/README.md](../src/bindings/clap/README.md)
 - [src/bindings/vst3/README.md](../src/bindings/vst3/README.md)
 

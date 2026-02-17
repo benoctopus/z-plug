@@ -31,8 +31,13 @@ This module provides the VST3 (Virtual Studio Technology 3) wrapper that transla
 - **Single-component model**: Same object implements processor and controller (simpler than split model)
 - **GUID generation**: Plugin ID string hashed to deterministic 16-byte TUID
 - **Zero-copy audio**: Channel pointers mapped directly from VST3 AudioBusBuffers to framework `Buffer`
+- **Parameter ID precomputation**: The wrapper precomputes all parameter IDs (hashes of string IDs) at comptime into a `param_ids` array, then uses array lookups instead of runtime calls to `core.idHash(param.id())`. This avoids comptime/runtime value resolution issues.
 - **State persistence**: VST3 IBStream wrapped in `std.io.AnyWriter`/`AnyReader`
-- **Parameter IDs**: Generated via FNV-1a hash of parameter string IDs
+- **Platform-specific exports**: The factory exports platform-specific module init/deinit functions at comptime:
+  - macOS: `bundleEntry`, `bundleExit`
+  - Linux: `ModuleEntry`, `ModuleExit`
+  - Windows: `InitDll`, `ExitDll`
+- **macOS bundle structure**: The build system creates a proper VST3 bundle with `Contents/MacOS/`, `Info.plist`, and `PkgInfo` files
 
 ## COM Interface Layout
 

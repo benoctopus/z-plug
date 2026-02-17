@@ -9,7 +9,7 @@ const core = @import("../../root.zig");
 /// Generate extension implementations for plugin type `T`.
 pub fn Extensions(comptime T: type) type {
     const P = core.Plugin(T);
-    
+
     // Pre-compute parameter IDs at comptime to avoid runtime idHash calls
     const param_ids = comptime blk: {
         var ids: [P.params.len]u32 = undefined;
@@ -18,17 +18,17 @@ pub fn Extensions(comptime T: type) type {
         }
         break :blk ids;
     };
-    
+
     return struct {
         // -------------------------------------------------------------------
         // Audio Ports Extension
         // -------------------------------------------------------------------
-        
+
         pub const audio_ports = clap.ext.audio_ports.Plugin{
             .count = audioPortsCount,
             .get = audioPortsGet,
         };
-        
+
         fn audioPortsCount(_: *const clap.Plugin, is_input: bool) callconv(.c) u32 {
             // For now, we support one main input and one main output port
             for (P.audio_io_layouts) |layout| {
@@ -40,7 +40,7 @@ pub fn Extensions(comptime T: type) type {
             }
             return 0;
         }
-        
+
         fn audioPortsGet(
             _: *const clap.Plugin,
             index: u32,
@@ -48,15 +48,15 @@ pub fn Extensions(comptime T: type) type {
             info: *clap.ext.audio_ports.Info,
         ) callconv(.c) bool {
             if (index != 0) return false;
-            
+
             // Use first layout
             const layout = P.audio_io_layouts[0];
-            
+
             const channel_count = if (is_input)
                 layout.main_input_channels orelse return false
             else
                 layout.main_output_channels orelse return false;
-            
+
             // Determine port type
             const port_type: ?[*:0]const u8 = if (channel_count == 1)
                 clap.ext.audio_ports.port_mono
@@ -64,7 +64,7 @@ pub fn Extensions(comptime T: type) type {
                 clap.ext.audio_ports.port_stereo
             else
                 null;
-            
+
             info.* = clap.ext.audio_ports.Info{
                 .id = @enumFromInt(if (is_input) @as(u32, 0) else @as(u32, 1)),
                 .name = undefined,
@@ -73,30 +73,30 @@ pub fn Extensions(comptime T: type) type {
                 .port_type = port_type,
                 .in_place_pair = @enumFromInt(@as(u32, @import("std").math.maxInt(u32))),
             };
-            
+
             // Set name
             const name = if (is_input) "Audio Input" else "Audio Output";
             @memset(&info.name, 0);
             @memcpy(info.name[0..name.len], name);
-            
+
             return true;
         }
-        
+
         // -------------------------------------------------------------------
         // Note Ports Extension
         // -------------------------------------------------------------------
-        
+
         pub const note_ports = clap.ext.note_ports.Plugin{
             .count = notePortsCount,
             .get = notePortsGet,
         };
-        
+
         fn notePortsCount(_: *const clap.Plugin, is_input: bool) callconv(.c) u32 {
             if (is_input and P.midi_input != .none) return 1;
             if (!is_input and P.midi_output != .none) return 1;
             return 0;
         }
-        
+
         fn notePortsGet(
             _: *const clap.Plugin,
             index: u32,
@@ -104,28 +104,28 @@ pub fn Extensions(comptime T: type) type {
             info: *clap.ext.note_ports.Info,
         ) callconv(.c) bool {
             if (index != 0) return false;
-            
+
             if (is_input and P.midi_input == .none) return false;
             if (!is_input and P.midi_output == .none) return false;
-            
+
             info.* = clap.ext.note_ports.Info{
                 .id = 0,
                 .supported_dialects = .{ .clap = true, .midi = true },
                 .preferred_dialect = .clap,
                 .name = undefined,
             };
-            
+
             const name = if (is_input) "Note Input" else "Note Output";
             @memset(&info.name, 0);
             @memcpy(info.name[0..name.len], name);
-            
+
             return true;
         }
-        
+
         // -------------------------------------------------------------------
         // Params Extension
         // -------------------------------------------------------------------
-        
+
         pub const params = clap.ext.params.Plugin{
             .count = paramsCount,
             .getInfo = paramsGetInfo,
@@ -134,21 +134,21 @@ pub fn Extensions(comptime T: type) type {
             .textToValue = paramsTextToValue,
             .flush = paramsFlush,
         };
-        
+
         fn paramsCount(_: *const clap.Plugin) callconv(.c) u32 {
             return @intCast(P.params.len);
         }
-        
+
         fn paramsGetInfo(
             _: *const clap.Plugin,
             index: u32,
             info: *clap.ext.params.Info,
         ) callconv(.c) bool {
             if (index >= P.params.len) return false;
-            
+
             const param = P.params[index];
             const param_id = param_ids[index];
-            
+
             info.* = clap.ext.params.Info{
                 .id = @enumFromInt(param_id),
                 .flags = .{
@@ -180,18 +180,18 @@ pub fn Extensions(comptime T: type) type {
                     .choice => |p| @floatFromInt(p.default),
                 },
             };
-            
+
             // Copy parameter name
             const name = param.name();
             @memset(&info.name, 0);
             @memcpy(info.name[0..@min(name.len, clap.name_capacity)], name[0..@min(name.len, clap.name_capacity)]);
-            
+
             // Empty module path for now
             @memset(&info.module, 0);
-            
+
             return true;
         }
-        
+
         fn paramsGetValue(
             plugin: *const clap.Plugin,
             id: clap.Id,
@@ -199,13 +199,13 @@ pub fn Extensions(comptime T: type) type {
         ) callconv(.c) bool {
             const wrapper = @as(*anyopaque, @ptrFromInt(@intFromPtr(plugin) - @offsetOf(@import("plugin.zig").PluginWrapper(T), "clap_plugin")));
             const self: *@import("plugin.zig").PluginWrapper(T) = @ptrCast(@alignCast(wrapper));
-            
+
             // Find parameter by ID
             for (P.params, 0..) |param, idx| {
                 const param_id = param_ids[idx];
                 if (param_id == @intFromEnum(id)) {
                     const normalized = self.param_values.get(idx);
-                    
+
                     // Convert normalized to plain value
                     out_value.* = switch (param) {
                         .float => |p| p.range.unnormalize(normalized),
@@ -220,10 +220,10 @@ pub fn Extensions(comptime T: type) type {
                     return true;
                 }
             }
-            
+
             return false;
         }
-        
+
         fn paramsValueToText(
             _: *const clap.Plugin,
             id: clap.Id,
@@ -255,17 +255,17 @@ pub fn Extensions(comptime T: type) type {
                             break :blk "?";
                         },
                     };
-                    
+
                     const copy_len = @min(text.len, out_buffer_capacity - 1);
                     @memcpy(out_buffer[0..copy_len], text[0..copy_len]);
                     out_buffer[copy_len] = 0;
                     return true;
                 }
             }
-            
+
             return false;
         }
-        
+
         fn paramsTextToValue(
             _: *const clap.Plugin,
             id: clap.Id,
@@ -273,7 +273,7 @@ pub fn Extensions(comptime T: type) type {
             out_value: *f64,
         ) callconv(.c) bool {
             const text = std.mem.span(value_text);
-            
+
             // Find parameter by ID
             for (P.params, 0..) |param, idx| {
                 const param_id = param_ids[idx];
@@ -311,10 +311,10 @@ pub fn Extensions(comptime T: type) type {
                     }
                 }
             }
-            
+
             return false;
         }
-        
+
         fn paramsFlush(
             plugin: *const clap.Plugin,
             in_events: *const clap.events.InputEvents,
@@ -322,7 +322,7 @@ pub fn Extensions(comptime T: type) type {
         ) callconv(.c) void {
             const wrapper = @as(*anyopaque, @ptrFromInt(@intFromPtr(plugin) - @offsetOf(@import("plugin.zig").PluginWrapper(T), "clap_plugin")));
             const self: *@import("plugin.zig").PluginWrapper(T) = @ptrCast(@alignCast(wrapper));
-            
+
             // Process all input parameter events
             const event_count = in_events.size(in_events);
             var i: u32 = 0;
@@ -346,7 +346,7 @@ pub fn Extensions(comptime T: type) type {
                                 },
                             };
                             self.param_values.set(idx, normalized);
-                            
+
                             // Update smoother target with the plain value
                             const plain_value: f32 = @floatCast(event.value);
                             self.smoother_bank.setTarget(idx, self.buffer_config.sample_rate, plain_value);
@@ -356,27 +356,27 @@ pub fn Extensions(comptime T: type) type {
                 }
             }
         }
-        
+
         // -------------------------------------------------------------------
         // State Extension
         // -------------------------------------------------------------------
-        
+
         pub const state = clap.ext.state.Plugin{
             .save = stateSave,
             .load = stateLoad,
         };
-        
+
         fn stateSave(
             plugin: *const clap.Plugin,
             stream: *const clap.OStream,
         ) callconv(.c) bool {
             const wrapper = @as(*anyopaque, @ptrFromInt(@intFromPtr(plugin) - @offsetOf(@import("plugin.zig").PluginWrapper(T), "clap_plugin")));
             const self: *@import("plugin.zig").PluginWrapper(T) = @ptrCast(@alignCast(wrapper));
-            
+
             // Create a writer adapter for the CLAP stream
             const Writer = struct {
                 stream_ptr: *const clap.OStream,
-                
+
                 pub fn write(ctx: *const anyopaque, bytes: []const u8) !usize {
                     const writer_self: *const @This() = @ptrCast(@alignCast(ctx));
                     const result = writer_self.stream_ptr.write(writer_self.stream_ptr, bytes.ptr, bytes.len);
@@ -385,41 +385,41 @@ pub fn Extensions(comptime T: type) type {
                     return @intCast(written);
                 }
             };
-            
+
             var writer_ctx = Writer{ .stream_ptr = stream };
             const any_writer = std.io.AnyWriter{
                 .context = @ptrCast(&writer_ctx),
                 .writeFn = Writer.write,
             };
-            
+
             // Write state header
             core.writeHeader(any_writer, P.state_version) catch return false;
-            
+
             // Write parameter values
             for (0..P.params.len) |i| {
                 const normalized = self.param_values.get(i);
                 const bytes = std.mem.asBytes(&normalized);
                 any_writer.writeAll(bytes) catch return false;
             }
-            
+
             const save_context = core.SaveContext{
                 .writer = any_writer,
             };
-            
+
             return P.save(&self.plugin, save_context);
         }
-        
+
         fn stateLoad(
             plugin: *const clap.Plugin,
             stream: *const clap.IStream,
         ) callconv(.c) bool {
             const wrapper = @as(*anyopaque, @ptrFromInt(@intFromPtr(plugin) - @offsetOf(@import("plugin.zig").PluginWrapper(T), "clap_plugin")));
             const self: *@import("plugin.zig").PluginWrapper(T) = @ptrCast(@alignCast(wrapper));
-            
+
             // Create a reader adapter for the CLAP stream
             const Reader = struct {
                 stream_ptr: *const clap.IStream,
-                
+
                 pub fn read(ctx: *const anyopaque, buffer: []u8) !usize {
                     const reader_self: *const @This() = @ptrCast(@alignCast(ctx));
                     const result = reader_self.stream_ptr.read(reader_self.stream_ptr, buffer.ptr, buffer.len);
@@ -429,16 +429,16 @@ pub fn Extensions(comptime T: type) type {
                     return @intCast(read_result);
                 }
             };
-            
+
             var reader_ctx = Reader{ .stream_ptr = stream };
             const any_reader = std.io.AnyReader{
                 .context = @ptrCast(&reader_ctx),
                 .readFn = Reader.read,
             };
-            
+
             // Read state header
             const version = core.readHeader(any_reader) catch return false;
-            
+
             // Read parameter values
             for (0..P.params.len) |i| {
                 var normalized: f32 = undefined;
@@ -446,18 +446,18 @@ pub fn Extensions(comptime T: type) type {
                 const read_count = any_reader.readAll(bytes) catch return false;
                 if (read_count != @sizeOf(f32)) return false;
                 self.param_values.set(i, normalized);
-                
+
                 // Update smoother target
                 const param = P.params[i];
                 const plain_value = param.toPlain(normalized);
                 self.smoother_bank.setTarget(i, self.buffer_config.sample_rate, plain_value);
             }
-            
+
             const load_context = core.LoadContext{
                 .reader = any_reader,
                 .version = version,
             };
-            
+
             return P.load(&self.plugin, load_context);
         }
     };

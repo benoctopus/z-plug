@@ -10,7 +10,7 @@ Remove the nih-plug submodule, and update any docs/agent instructions that refer
 
 ---
 
-_**Agent (model claude-4.6-opus-high-thinking, mode Agent)**_
+_**Agent (model claude-4.5-sonnet, mode Agent)**_
 
 <think><details><summary>Thought Process</summary>
 The user wants me to:
@@ -1331,7 +1331,7 @@ I removed zig-plug-design.md, please cleanup any references to it
 
 ---
 
-_**Agent (model claude-4.6-opus-high-thinking, mode Agent)**_
+_**Agent (model claude-4.5-sonnet, mode Agent)**_
 
 <think><details><summary>Thought Process</summary>
 The user removed `zig-plug-design.md` and wants me to clean up any references to it in the project files.</details></think>
@@ -1381,6 +1381,721 @@ Status: **completed**
 
 
 </details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search">
+<details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+
+Parameters:
+
+```json
+{
+  "pattern": "zig-plug-design\\.md",
+  "path": "/Users/b/code/z-plug/README.md",
+  "context": 2,
+  "caseInsensitive": false
+}
+```
+Result:
+
+```json
+{
+  "success": {
+    "pattern": "zig-plug-design\\.md",
+    "path": "/Users/b/code/z-plug/README.md",
+    "outputMode": "content",
+    "workspaceResults": {
+      "/Users/b/code/z-plug": {
+        "content": {
+          "matches": [
+            {
+              "file": "README.md",
+              "matches": [
+                {
+                  "lineNumber": 87,
+                  "content": "- **[docs/architecture.md](docs/architecture.md)** — How the layers fit together",
+                  "isContextLine": true
+                },
+                {
+                  "lineNumber": 88,
+                  "content": "- **[AGENTS.md](AGENTS.md)** — Coding standards and architecture rules",
+                  "isContextLine": true
+                },
+                {
+                  "lineNumber": 89,
+                  "content": "- **[zig-plug-design.md](zig-plug-design.md)** — Complete design document with rationale"
+                },
+                {
+                  "lineNumber": 90,
+                  "content": "- **Module READMEs** — See &#96;src/*/README.md&#96; for module-specific docs",
+                  "isContextLine": true
+                },
+                {
+                  "lineNumber": 91,
+                  "isContextLine": true
+                }
+              ]
+            }
+          ],
+          "totalLines": 5,
+          "totalMatchedLines": 1
+        }
+      }
+    }
+  }
+}
+```
+Status: **completed**
+
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search">
+<details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+
+Parameters:
+
+```json
+{
+  "pattern": "zig-plug-design\\.md",
+  "path": "/Users/b/code/z-plug/docs/getting-started.md",
+  "context": 2,
+  "caseInsensitive": false
+}
+```
+Result:
+
+```json
+{
+  "success": {
+    "pattern": "zig-plug-design\\.md",
+    "path": "/Users/b/code/z-plug/docs/getting-started.md",
+    "outputMode": "content",
+    "workspaceResults": {
+      "/Users/b/code/z-plug": {
+        "content": {
+          "matches": [
+            {
+              "file": "docs/getting-started.md",
+              "matches": [
+                {
+                  "lineNumber": 107,
+                  "content": "├── flake.nix                      # Nix development environment",
+                  "isContextLine": true
+                },
+                {
+                  "lineNumber": 108,
+                  "content": "├── AGENTS.md                      # Coding guidelines for AI agents",
+                  "isContextLine": true
+                },
+                {
+                  "lineNumber": 109,
+                  "content": "├── zig-plug-design.md             # Complete design document"
+                },
+                {
+                  "lineNumber": 110,
+                  "content": "└── README.md                      # Project overview",
+                  "isContextLine": true
+                },
+                {
+                  "lineNumber": 111,
+                  "content": "&#96;&#96;&#96;",
+                  "isContextLine": true
+                },
+                {
+                  "lineNumber": 117,
+                  "content": "- **[docs/architecture.md](architecture.md)** — How the layers fit together",
+                  "isContextLine": true
+                },
+                {
+                  "lineNumber": 118,
+                  "content": "- **[docs/plugin-authors.md](plugin-authors.md)** — Writing plugins with zig-plug",
+                  "isContextLine": true
+                },
+                {
+                  "lineNumber": 119,
+                  "content": "- **[zig-plug-design.md](../zig-plug-design.md)** — Complete design rationale and phased implementation plan"
+                },
+                {
+                  "lineNumber": 120,
+                  "content": "- **[AGENTS.md](../AGENTS.md)** — Coding standards and architecture rules",
+                  "isContextLine": true
+                },
+                {
+                  "lineNumber": 121,
+                  "content": "- **Module READMEs** — See &#96;src/*/README.md&#96; for module-specific docs",
+                  "isContextLine": true
+                },
+                {
+                  "lineNumber": 155,
+                  "content": "- **Understanding the architecture:** See [docs/architecture.md](architecture.md)",
+                  "isContextLine": true
+                },
+                {
+                  "lineNumber": 156,
+                  "content": "- **Contributing code:** See [AGENTS.md](../AGENTS.md)",
+                  "isContextLine": true
+                },
+                {
+                  "lineNumber": 157,
+                  "content": "- **Design rationale:** See [zig-plug-design.md](../zig-plug-design.md)"
+                }
+              ]
+            }
+          ],
+          "totalLines": 13,
+          "totalMatchedLines": 3
+        }
+      }
+    }
+  }
+}
+```
+Status: **completed**
+
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search">
+<details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+
+Parameters:
+
+```json
+{
+  "pattern": "zig-plug-design\\.md",
+  "path": "/Users/b/code/z-plug/AGENTS.md",
+  "context": 2,
+  "caseInsensitive": false
+}
+```
+Result:
+
+```json
+{
+  "success": {
+    "pattern": "zig-plug-design\\.md",
+    "path": "/Users/b/code/z-plug/AGENTS.md",
+    "outputMode": "content",
+    "workspaceResults": {
+      "/Users/b/code/z-plug": {
+        "content": {
+          "matches": [
+            {
+              "file": "AGENTS.md",
+              "matches": [
+                {
+                  "lineNumber": 199,
+                  "content": "- **&#96;docs/plugin-authors.md&#96;** — Public API guide for writing plugins (examples, parameter system, buffer access, events, state)",
+                  "isContextLine": true
+                },
+                {
+                  "lineNumber": 200,
+                  "isContextLine": true
+                },
+                {
+                  "lineNumber": 201,
+                  "content": "These docs provide practical guidance and reference &#96;zig-plug-design.md&#96; for deep design rationale rather than duplicating it."
+                },
+                {
+                  "lineNumber": 202,
+                  "isContextLine": true
+                },
+                {
+                  "lineNumber": 203,
+                  "content": "### Module-Level Documentation (per-module &#96;README.md&#96;)",
+                  "isContextLine": true
+                },
+                {
+                  "lineNumber": 251,
+                  "content": "- **CLAP headers (&#96;free-audio/clap&#96;)**: The ground truth for CLAP struct definitions.",
+                  "isContextLine": true
+                },
+                {
+                  "lineNumber": 252,
+                  "isContextLine": true
+                },
+                {
+                  "lineNumber": 253,
+                  "content": "See &#96;zig-plug-design.md&#96; for full URLs and detailed design rationale."
+                }
+              ]
+            }
+          ],
+          "totalLines": 8,
+          "totalMatchedLines": 2
+        }
+      }
+    }
+  }
+}
+```
+Status: **completed**
+
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search">
+<details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+
+Parameters:
+
+```json
+{
+  "pattern": "zig-plug-design\\.md",
+  "path": "/Users/b/code/z-plug/docs/plugin-authors.md",
+  "context": 2,
+  "caseInsensitive": false
+}
+```
+Result:
+
+```json
+{
+  "success": {
+    "pattern": "zig-plug-design\\.md",
+    "path": "/Users/b/code/z-plug/docs/plugin-authors.md",
+    "outputMode": "content",
+    "workspaceResults": {
+      "/Users/b/code/z-plug": {
+        "content": {
+          "matches": [
+            {
+              "file": "docs/plugin-authors.md",
+              "matches": [
+                {
+                  "lineNumber": 396,
+                  "content": "- **Architecture details:** See [docs/architecture.md](architecture.md)",
+                  "isContextLine": true
+                },
+                {
+                  "lineNumber": 397,
+                  "content": "- **Module internals:** See &#96;src/*/README.md&#96; files",
+                  "isContextLine": true
+                },
+                {
+                  "lineNumber": 398,
+                  "content": "- **Design rationale:** See [zig-plug-design.md](../zig-plug-design.md)"
+                },
+                {
+                  "lineNumber": 399,
+                  "content": "- **Coding standards:** See [AGENTS.md](../AGENTS.md)",
+                  "isContextLine": true
+                }
+              ]
+            }
+          ],
+          "totalLines": 4,
+          "totalMatchedLines": 1
+        }
+      }
+    }
+  }
+}
+```
+Status: **completed**
+
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search">
+<details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+
+Parameters:
+
+```json
+{
+  "pattern": "zig-plug-design\\.md",
+  "path": "/Users/b/code/z-plug/docs/architecture.md",
+  "context": 2,
+  "caseInsensitive": false
+}
+```
+Result:
+
+```json
+{
+  "success": {
+    "pattern": "zig-plug-design\\.md",
+    "path": "/Users/b/code/z-plug/docs/architecture.md",
+    "outputMode": "content",
+    "workspaceResults": {
+      "/Users/b/code/z-plug": {
+        "content": {
+          "matches": [
+            {
+              "file": "docs/architecture.md",
+              "matches": [
+                {
+                  "lineNumber": 1,
+                  "content": "# Architecture",
+                  "isContextLine": true
+                },
+                {
+                  "lineNumber": 2,
+                  "isContextLine": true
+                },
+                {
+                  "lineNumber": 3,
+                  "content": "This document provides a practical overview of how zig-plug's components fit together. For the complete design rationale, see [zig-plug-design.md](../zig-plug-design.md)."
+                },
+                {
+                  "lineNumber": 4,
+                  "isContextLine": true
+                },
+                {
+                  "lineNumber": 5,
+                  "content": "## Four-Layer Design",
+                  "isContextLine": true
+                }
+              ]
+            }
+          ],
+          "totalLines": 5,
+          "totalMatchedLines": 1
+        }
+      }
+    }
+  }
+}
+```
+Status: **completed**
+
+
+</details>
+</tool-use>
+
+---
+
+Got all the references. Let me fix them all now.
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: /Users/b/code/z-plug/README.md</summary>
+
+</details>
+
+</tool-use>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: /Users/b/code/z-plug/docs/getting-started.md</summary>
+
+</details>
+
+</tool-use>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: /Users/b/code/z-plug/docs/getting-started.md</summary>
+
+</details>
+
+</tool-use>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: /Users/b/code/z-plug/docs/getting-started.md</summary>
+
+</details>
+
+</tool-use>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: /Users/b/code/z-plug/AGENTS.md</summary>
+
+</details>
+
+</tool-use>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: /Users/b/code/z-plug/docs/plugin-authors.md</summary>
+
+</details>
+
+</tool-use>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: /Users/b/code/z-plug/AGENTS.md</summary>
+
+</details>
+
+</tool-use>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: /Users/b/code/z-plug/docs/architecture.md</summary>
+
+</details>
+
+</tool-use>
+
+---
+
+Let me verify no references remain.
+
+---
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search">
+<details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+
+Parameters:
+
+```json
+{
+  "pattern": "zig-plug-design\\.md",
+  "glob": "!.specstory/**",
+  "outputMode": "files_with_matches",
+  "caseInsensitive": false
+}
+```
+Result:
+
+```json
+{
+  "success": {
+    "pattern": "zig-plug-design\\.md",
+    "outputMode": "files_with_matches",
+    "workspaceResults": {
+      "/Users/b/code/z-plug": {
+        "files": {}
+      }
+    }
+  }
+}
+```
+Status: **completed**
+
+
+</details>
+</tool-use>
+
+---
+
+All clean. Here's what was updated across 5 files:
+
+- **`README.md`** — Removed the `zig-plug-design.md` line from the Documentation section
+- **`docs/getting-started.md`** — Removed it from the project structure tree, the documentation links list, and replaced the "Design rationale" link at the bottom with a pointer to `docs/architecture.md` instead
+- **`AGENTS.md`** — Replaced the two references: one in the documentation description now just says "practical guidance for contributors and plugin authors", and the Key References footer now points to the nih-plug repo and `docs/architecture.md`
+- **`docs/plugin-authors.md`** — Removed the "Design rationale" link line
+- **`docs/architecture.md`** — Removed the "For the complete design rationale, see zig-plug-design.md" sentence from the opening paragraph
+
+---
+
+_**User**_
+
+Would it be possible to integrate the shell scripts you've written as zig build commands?
+
+---
+
+_**Agent (model claude-4.5-sonnet, mode Agent)**_
+
+<think><details><summary>Thought Process</summary>
+The user is asking about integrating shell scripts into zig build commands. Let me first find what shell scripts exist in the project.</details></think>
+
+---
+
+Let me find what shell scripts are in the project.
+
+---
+
+<tool-use data-tool-type="generic" data-tool-name="glob_file_search">
+<details>
+<summary>Tool use: **glob_file_search** • Searched codebase "undefined" • **3** results in **1** directory</summary>
+
+Directory: **undefined** (3 files)
+
+| File |
+|------|
+| `./uninstall_plugins.sh` |
+| `./sign_plugins.sh` |
+| `./install_plugins.sh` |
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="generic" data-tool-name="glob_file_search">
+<details>
+<summary>Tool use: **glob_file_search** • Searched codebase "undefined" • **0** result in **1** directory</summary>
+
+Directory: **undefined** (0 file)
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: /Users/b/code/z-plug/build.zig</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: /Users/b/code/z-plug/install_plugins.sh</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: /Users/b/code/z-plug/uninstall_plugins.sh</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: /Users/b/code/z-plug/sign_plugins.sh</summary>
+
+</details>
+</tool-use>
+
+---
+
+<think><details><summary>Thought Process</summary>
+Now I have a clear picture of all three scripts. Let me assess feasibility:
+
+1. **`install_plugins.sh`** - Copies built `.clap` and `.vst3` plugins from `zig-out/plugins/` to OS-specific standard directories. Supports `--user` (default) and `--system` flags.
+
+2. **`uninstall_plugins.sh`** - Removes installed plugins from OS-specific standard directories. Supports `--user`, `--system`, `--all`, and `--dry-run` flags. Has fallback detection using `strings` for CLAP and `grep` on Info.plist for VST3.
+
+
+3. **`sign_plugins.sh`** - Signs plugins with `codesign` on macOS for ad-hoc local testing. All three can be integrated into the Zig build system as custom steps using system commands, with OS detection at build time, making commands like `zig build install-plugins`, `zig build uninstall-plugins`, and `zig build sign-plugins` available instead of relying on separate shell scripts.</details></think>
+
+---
+
+Yes, absolutely. All three scripts map naturally to `zig build` steps. Here's the breakdown:
+
+| Script | Proposed step | What it does |
+|---|---|---|
+| `install_plugins.sh` | `zig build install-plugins` | Copy `.clap`/`.vst3` from `zig-out/plugins/` to OS-standard plugin dirs |
+| `uninstall_plugins.sh` | `zig build uninstall-plugins` | Remove zig-plug plugins from those dirs |
+| `sign_plugins.sh` | `zig build sign-plugins` | Ad-hoc `codesign` (macOS only) |
+
+**Advantages over shell scripts:**
+- Cross-platform without `uname` branching — Zig's build system already knows the target OS via `@import("builtin")`
+- User/system directory selection via `zig build install-plugins -Dscope=system` (build options)
+- No bash dependency on Windows
+- Better integration — steps can depend on each other (e.g., `sign-plugins` automatically depends on the build step)
+- The `--dry-run` from uninstall is harder to replicate directly, but a log of what *would* be removed is feasible
+
+**One caveat:** the `uninstall_plugins.sh` fallback path that uses `strings` and `grep` to detect zig-plug plugins when the build dir is missing is complex to replicate in pure Zig. But the primary path (matching against known plugin names from the build graph) is straightforward and arguably more reliable.
+
+Want me to go ahead and implement these as build steps?
+
+---
+
+_**User**_
+
+sure
+
+---
+
+_**Agent (model claude-4.5-sonnet, mode Agent)**_
+
+<tool-use data-tool-type="task" data-tool-name="todo_write">
+<details><summary>Tool use: **todo_write** • Todo List</summary>
+
+- [-] Add install-plugins build step (user/system directory support)
+- [ ] Add uninstall-plugins build step
+- [ ] Add sign-plugins build step (macOS codesign)
+- [ ] Update docs to reference new build steps
+- [ ] Test the new build steps
+
+</details>
+</tool-use>
+
+---
+
+I'll implement these build steps directly in `build.zig`. Let me add them to the build function.
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: /Users/b/code/z-plug/build.zig</summary>
+
+</details>
+
+</tool-use>
+
+---
+
+Now let me create the build tools directory and the three helper executables:
+
+---
+
+<tool-use data-tool-type="shell" data-tool-name="run_terminal_command_v2">
+<details><summary>Tool use: **run_terminal_command_v2** • Run command: mkdir -p build_tools</summary>
+
+```bash
+mkdir -p build_tools
+```
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: /Users/b/code/z-plug/build_tools/install_plugins.zig</summary>
+
+Status: **loading**
+
+</details>
+
 </tool-use>
 
 ---

@@ -16,7 +16,7 @@ pub const IParamValueQueueVtbl = extern struct {
     queryInterface: *const fn (*anyopaque, *const TUID, *?*anyopaque) callconv(.c) tresult,
     addRef: *const fn (*anyopaque) callconv(.c) u32,
     release: *const fn (*anyopaque) callconv(.c) u32,
-    
+
     // IParamValueQueue methods
     getParameterId: *const fn (*anyopaque) callconv(.c) ParamID,
     getPointCount: *const fn (*anyopaque) callconv(.c) i32,
@@ -36,7 +36,7 @@ pub const IParameterChangesVtbl = extern struct {
     queryInterface: *const fn (*anyopaque, *const TUID, *?*anyopaque) callconv(.c) tresult,
     addRef: *const fn (*anyopaque) callconv(.c) u32,
     release: *const fn (*anyopaque) callconv(.c) u32,
-    
+
     // IParameterChanges methods
     getParameterCount: *const fn (*anyopaque) callconv(.c) i32,
     getParameterData: *const fn (*anyopaque, i32) callconv(.c) ?*IParamValueQueue,

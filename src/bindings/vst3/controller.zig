@@ -25,7 +25,7 @@ pub const ParameterInfo = extern struct {
     default_normalized_value: ParamValue,
     unit_id: UnitID,
     flags: i32,
-    
+
     pub const ParameterFlags = enum(i32) {
         kNoFlags = 0,
         kCanAutomate = 1 << 0,
@@ -49,11 +49,11 @@ pub const IEditControllerVtbl = extern struct {
     queryInterface: *const fn (*anyopaque, *const TUID, *?*anyopaque) callconv(.c) tresult,
     addRef: *const fn (*anyopaque) callconv(.c) u32,
     release: *const fn (*anyopaque) callconv(.c) u32,
-    
+
     // IPluginBase methods
     initialize: *const fn (*anyopaque, *anyopaque) callconv(.c) tresult,
     terminate: *const fn (*anyopaque) callconv(.c) tresult,
-    
+
     // IEditController methods
     setComponentState: *const fn (*anyopaque, *IBStream) callconv(.c) tresult,
     setState: *const fn (*anyopaque, *IBStream) callconv(.c) tresult,
@@ -82,7 +82,7 @@ pub const IComponentHandlerVtbl = extern struct {
     queryInterface: *const fn (*anyopaque, *const TUID, *?*anyopaque) callconv(.c) tresult,
     addRef: *const fn (*anyopaque) callconv(.c) u32,
     release: *const fn (*anyopaque) callconv(.c) u32,
-    
+
     // IComponentHandler methods
     beginEdit: *const fn (*anyopaque, ParamID) callconv(.c) tresult,
     performEdit: *const fn (*anyopaque, ParamID, ParamValue) callconv(.c) tresult,
