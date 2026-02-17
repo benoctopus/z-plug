@@ -286,6 +286,74 @@ pub fn Plugin(comptime T: type) type {
         /// Defaults to 1 if not declared by the plugin.
         pub const state_version = if (@hasDecl(T, "state_version")) T.state_version else 1;
 
+        // Pre-compute parameter IDs and lookup table at comptime
+        pub const param_ids = blk: {
+            var ids: [params.len]u32 = undefined;
+            for (params, 0..) |param, i| {
+                ids[i] = params_mod.idHash(param.id());
+            }
+            break :blk ids;
+        };
+
+        /// Sorted parameter ID/index pairs for binary search lookup.
+        const ParamLookupEntry = struct {
+            id: u32,
+            index: usize,
+        };
+
+        /// Comptime-sorted parameter lookup table for O(log N) ID->index lookups.
+        pub const param_lookup_table = blk: {
+            if (params.len == 0) break :blk &[_]ParamLookupEntry{};
+            
+            var entries: [params.len]ParamLookupEntry = undefined;
+            for (param_ids, 0..) |id, i| {
+                entries[i] = .{ .id = id, .index = i };
+            }
+            
+            // Bubble sort (simple and works at comptime)
+            var n = entries.len;
+            while (n > 1) {
+                var new_n: usize = 0;
+                var i: usize = 1;
+                while (i < n) : (i += 1) {
+                    if (entries[i - 1].id > entries[i].id) {
+                        const tmp = entries[i - 1];
+                        entries[i - 1] = entries[i];
+                        entries[i] = tmp;
+                        new_n = i;
+                    }
+                }
+                n = new_n;
+            }
+            
+            const result = entries;
+            break :blk &result;
+        };
+
+        /// Find the parameter index for a given ID using binary search.
+        /// Returns null if the ID is not found.
+        pub fn findParamIndex(param_id: u32) ?usize {
+            if (params.len == 0) return null;
+            
+            var left: usize = 0;
+            var right: usize = param_lookup_table.len;
+            
+            while (left < right) {
+                const mid = left + (right - left) / 2;
+                const entry = param_lookup_table[mid];
+                
+                if (entry.id == param_id) {
+                    return entry.index;
+                } else if (entry.id < param_id) {
+                    left = mid + 1;
+                } else {
+                    right = mid;
+                }
+            }
+            
+            return null;
+        }
+
         // Optional callbacks
         pub const has_reset = @hasDecl(T, "reset");
         pub const has_save = @hasDecl(T, "save");

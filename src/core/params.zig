@@ -263,7 +263,8 @@ pub fn ParamValues(comptime N: usize) type {
         const Self = @This();
 
         /// Normalized values (0.0–1.0) for each parameter.
-        values: [N]std.atomic.Value(f32),
+        /// Aligned to cache line for optimal access patterns on the audio thread.
+        values: [N]std.atomic.Value(f32) align(@import("../root.zig").CACHE_LINE_SIZE),
 
         /// Initialize all parameter values to their defaults.
         pub fn init(comptime params: []const Param) Self {
@@ -275,12 +276,12 @@ pub fn ParamValues(comptime N: usize) type {
         }
 
         /// Get the normalized value of parameter at `index` (audio-thread safe).
-        pub fn get(self: *const Self, index: usize) f32 {
+        pub inline fn get(self: *const Self, index: usize) f32 {
             return self.values[index].load(.monotonic);
         }
 
         /// Set the normalized value of parameter at `index` (audio-thread safe).
-        pub fn set(self: *Self, index: usize, normalized: f32) void {
+        pub inline fn set(self: *Self, index: usize, normalized: f32) void {
             self.values[index].store(normalized, .monotonic);
         }
 
@@ -447,7 +448,7 @@ pub const Smoother = struct {
     }
 
     /// Get the next smoothed sample value and advance the smoother.
-    pub fn next(self: *Smoother) f32 {
+    pub inline fn next(self: *Smoother) f32 {
         if (self.steps_left == 0) {
             return self.current;
         }
@@ -476,7 +477,43 @@ pub const Smoother = struct {
     }
 
     /// Fill a block of samples with smoothed values.
-    pub fn nextBlock(self: *Smoother, out: []f32) void {
+    pub inline fn nextBlock(self: *Smoother, out: []f32) void {
+        if (out.len == 0) return;
+
+        // Fast path: no smoothing needed
+        if (self.steps_left == 0) {
+            @memset(out, self.current);
+            return;
+        }
+
+        // Optimized path for linear smoothing: compute arithmetic progression directly
+        // This eliminates the loop-carried dependency and allows compiler auto-vectorization
+        if (self.style == .linear) {
+            const start = self.current;
+            const step = self.step_size;
+            const samples_to_smooth = @min(out.len, self.steps_left);
+
+            // Fill smoothed portion with arithmetic progression: start + i*step
+            for (out[0..samples_to_smooth], 0..) |*sample, i| {
+                sample.* = start + step * @as(f32, @floatFromInt(i));
+            }
+
+            // Update state
+            self.current = start + step * @as(f32, @floatFromInt(samples_to_smooth));
+            self.steps_left -= @intCast(samples_to_smooth);
+            if (self.steps_left == 0) {
+                self.current = self.target; // Snap to exact target
+            }
+
+            // Fill remainder with target value (no smoothing)
+            if (samples_to_smooth < out.len) {
+                @memset(out[samples_to_smooth..], self.current);
+            }
+            return;
+        }
+
+        // Fallback for exponential/other styles: use per-sample next()
+        // Exponential has true loop-carried dependency and cannot be vectorized
         for (out) |*sample| {
             sample.* = self.next();
         }
@@ -504,7 +541,8 @@ pub fn SmootherBank(comptime N: usize) type {
         const Self = @This();
 
         /// One smoother per parameter.
-        smoothers: [N]Smoother,
+        /// Aligned to cache line for optimal access patterns on the audio thread.
+        smoothers: [N]Smoother align(@import("../root.zig").CACHE_LINE_SIZE),
 
         /// Initialize all smoothers from parameter declarations.
         pub fn init(comptime params: []const Param) Self {

@@ -76,10 +76,12 @@ pub fn ComObject(comptime StateType: type, comptime interfaces: []const Interfac
         /// Decrement reference count and free if it reaches zero.
         pub fn release(self: *anyopaque) callconv(.c) u32 {
             const self_ptr: *Self = @ptrCast(@alignCast(self));
-            const prev = self_ptr.ref_count.fetchSub(1, .monotonic);
+            const prev = self_ptr.ref_count.fetchSub(1, .release);
             const new_count = prev - 1;
 
             if (new_count == 0) {
+                // Synchronize with all previous releases
+                _ = self_ptr.ref_count.load(.acquire);
                 // Free the object
                 std.heap.page_allocator.destroy(self_ptr);
             }

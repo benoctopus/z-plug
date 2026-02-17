@@ -44,8 +44,7 @@ This project requires Zig 0.15.2. The provided `flake.nix` sets up a development
 
 ```bash
 # Activate the Zig 0.15.2 environment (if using Nix + direnv)
-direnv allow .
-eval "$(direnv export bash)"
+direnv allow
 
 # Run tests
 zig build test

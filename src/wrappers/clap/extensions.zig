@@ -5,19 +5,11 @@
 const std = @import("std");
 const clap = @import("../../bindings/clap/main.zig");
 const core = @import("../../root.zig");
+const common = @import("../common.zig");
 
 /// Generate extension implementations for plugin type `T`.
 pub fn Extensions(comptime T: type) type {
     const P = core.Plugin(T);
-
-    // Pre-compute parameter IDs at comptime to avoid runtime idHash calls
-    const param_ids = comptime blk: {
-        var ids: [P.params.len]u32 = undefined;
-        for (P.params, 0..) |param, i| {
-            ids[i] = core.idHash(param.id());
-        }
-        break :blk ids;
-    };
 
     return struct {
         // -------------------------------------------------------------------
@@ -147,7 +139,7 @@ pub fn Extensions(comptime T: type) type {
             if (index >= P.params.len) return false;
 
             const param = P.params[index];
-            const param_id = param_ids[index];
+            const param_id = P.param_ids[index];
 
             info.* = clap.ext.params.Info{
                 .id = @enumFromInt(param_id),
@@ -200,25 +192,14 @@ pub fn Extensions(comptime T: type) type {
             const wrapper = @as(*anyopaque, @ptrFromInt(@intFromPtr(plugin) - @offsetOf(@import("plugin.zig").PluginWrapper(T), "clap_plugin")));
             const self: *@import("plugin.zig").PluginWrapper(T) = @ptrCast(@alignCast(wrapper));
 
-            // Find parameter by ID
-            for (P.params, 0..) |param, idx| {
-                const param_id = param_ids[idx];
-                if (param_id == @intFromEnum(id)) {
-                    const normalized = self.param_values.get(idx);
+            // Find parameter by ID using binary search
+            if (P.findParamIndex(@intFromEnum(id))) |idx| {
+                const param = P.params[idx];
+                const normalized = self.param_values.get(idx);
 
-                    // Convert normalized to plain value
-                    out_value.* = switch (param) {
-                        .float => |p| p.range.unnormalize(normalized),
-                        .int => |p| @floatFromInt(p.range.unnormalize(normalized)),
-                        .boolean => if (normalized > 0.5) @as(f64, 1.0) else @as(f64, 0.0),
-                        .choice => |p| blk: {
-                            if (p.labels.len <= 1) break :blk 0.0;
-                            const choice_idx = @as(u32, @intFromFloat(normalized * @as(f32, @floatFromInt(p.labels.len - 1))));
-                            break :blk @floatFromInt(choice_idx);
-                        },
-                    };
-                    return true;
-                }
+                // Convert normalized to plain value using shared helper
+                out_value.* = common.normalizedToPlain(param, normalized);
+                return true;
             }
 
             return false;
@@ -231,36 +212,34 @@ pub fn Extensions(comptime T: type) type {
             out_buffer: [*]u8,
             out_buffer_capacity: u32,
         ) callconv(.c) bool {
-            // Find parameter by ID
-            for (P.params, 0..) |param, idx| {
-                const param_id = param_ids[idx];
-                if (param_id == @intFromEnum(id)) {
-                    // Format the value
-                    const text = switch (param) {
-                        .float => |p| blk: {
-                            var buf: [64]u8 = undefined;
-                            const unit = if (p.unit.len > 0) p.unit else "";
-                            const formatted = std.fmt.bufPrint(&buf, "{d:.2}{s}", .{ value, unit }) catch break :blk "?";
-                            break :blk formatted;
-                        },
-                        .int => blk: {
-                            var buf: [64]u8 = undefined;
-                            const formatted = std.fmt.bufPrint(&buf, "{d}", .{@as(i32, @intFromFloat(value))}) catch break :blk "?";
-                            break :blk formatted;
-                        },
-                        .boolean => if (value > 0.5) "On" else "Off",
-                        .choice => |p| blk: {
-                            const choice_idx = @as(usize, @intFromFloat(value));
-                            if (choice_idx < p.labels.len) break :blk p.labels[choice_idx];
-                            break :blk "?";
-                        },
-                    };
+            // Find parameter by ID using binary search
+            if (P.findParamIndex(@intFromEnum(id))) |idx| {
+                const param = P.params[idx];
+                // Format the value
+                const text = switch (param) {
+                    .float => |p| blk: {
+                        var buf: [64]u8 = undefined;
+                        const unit = if (p.unit.len > 0) p.unit else "";
+                        const formatted = std.fmt.bufPrint(&buf, "{d:.2}{s}", .{ value, unit }) catch break :blk "?";
+                        break :blk formatted;
+                    },
+                    .int => blk: {
+                        var buf: [64]u8 = undefined;
+                        const formatted = std.fmt.bufPrint(&buf, "{d}", .{@as(i32, @intFromFloat(value))}) catch break :blk "?";
+                        break :blk formatted;
+                    },
+                    .boolean => if (value > 0.5) "On" else "Off",
+                    .choice => |p| blk: {
+                        const choice_idx = @as(usize, @intFromFloat(value));
+                        if (choice_idx < p.labels.len) break :blk p.labels[choice_idx];
+                        break :blk "?";
+                    },
+                };
 
-                    const copy_len = @min(text.len, out_buffer_capacity - 1);
-                    @memcpy(out_buffer[0..copy_len], text[0..copy_len]);
-                    out_buffer[copy_len] = 0;
-                    return true;
-                }
+                const copy_len = @min(text.len, out_buffer_capacity - 1);
+                @memcpy(out_buffer[0..copy_len], text[0..copy_len]);
+                out_buffer[copy_len] = 0;
+                return true;
             }
 
             return false;
@@ -274,41 +253,39 @@ pub fn Extensions(comptime T: type) type {
         ) callconv(.c) bool {
             const text = std.mem.span(value_text);
 
-            // Find parameter by ID
-            for (P.params, 0..) |param, idx| {
-                const param_id = param_ids[idx];
-                if (param_id == @intFromEnum(id)) {
-                    switch (param) {
-                        .float => {
-                            const parsed = std.fmt.parseFloat(f64, text) catch return false;
-                            out_value.* = parsed;
+            // Find parameter by ID using binary search
+            if (P.findParamIndex(@intFromEnum(id))) |idx| {
+                const param = P.params[idx];
+                switch (param) {
+                    .float => {
+                        const parsed = std.fmt.parseFloat(f64, text) catch return false;
+                        out_value.* = parsed;
+                        return true;
+                    },
+                    .int => {
+                        const parsed = std.fmt.parseInt(i32, text, 10) catch return false;
+                        out_value.* = @floatFromInt(parsed);
+                        return true;
+                    },
+                    .boolean => {
+                        if (std.ascii.eqlIgnoreCase(text, "on") or std.ascii.eqlIgnoreCase(text, "true") or std.ascii.eqlIgnoreCase(text, "1")) {
+                            out_value.* = 1.0;
                             return true;
-                        },
-                        .int => {
-                            const parsed = std.fmt.parseInt(i32, text, 10) catch return false;
-                            out_value.* = @floatFromInt(parsed);
+                        } else {
+                            out_value.* = 0.0;
                             return true;
-                        },
-                        .boolean => {
-                            if (std.ascii.eqlIgnoreCase(text, "on") or std.ascii.eqlIgnoreCase(text, "true") or std.ascii.eqlIgnoreCase(text, "1")) {
-                                out_value.* = 1.0;
-                                return true;
-                            } else {
-                                out_value.* = 0.0;
+                        }
+                    },
+                    .choice => |p| {
+                        // Try to find matching label
+                        for (p.labels, 0..) |label, choice_idx| {
+                            if (std.ascii.eqlIgnoreCase(text, label)) {
+                                out_value.* = @floatFromInt(choice_idx);
                                 return true;
                             }
-                        },
-                        .choice => |p| {
-                            // Try to find matching label
-                            for (p.labels, 0..) |label, choice_idx| {
-                                if (std.ascii.eqlIgnoreCase(text, label)) {
-                                    out_value.* = @floatFromInt(choice_idx);
-                                    return true;
-                                }
-                            }
-                            return false;
-                        },
-                    }
+                        }
+                        return false;
+                    },
                 }
             }
 
@@ -330,27 +307,17 @@ pub fn Extensions(comptime T: type) type {
                 const header = in_events.get(in_events, i);
                 if (header.type == .param_value) {
                     const event: *const clap.events.ParamValue = @ptrCast(@alignCast(header));
-                    // Find parameter index by ID
-                    for (P.params, 0..) |param, idx| {
-                        const param_id = param_ids[idx];
-                        if (param_id == @intFromEnum(event.param_id)) {
-                            // Convert plain value to normalized
-                            const normalized = switch (param) {
-                                .float => |p| p.range.normalize(@floatCast(event.value)),
-                                .int => |p| p.range.normalize(@intFromFloat(event.value)),
-                                .boolean => if (event.value > 0.5) @as(f32, 1.0) else @as(f32, 0.0),
-                                .choice => |p| blk: {
-                                    if (p.labels.len <= 1) break :blk 0.0;
-                                    const choice_idx = @min(@as(u32, @intFromFloat(event.value)), @as(u32, @intCast(p.labels.len - 1)));
-                                    break :blk @as(f32, @floatFromInt(choice_idx)) / @as(f32, @floatFromInt(p.labels.len - 1));
-                                },
-                            };
+                    // Find parameter index by ID using binary search
+                    if (P.params.len > 0) {
+                        if (P.findParamIndex(@intFromEnum(event.param_id))) |idx| {
+                            const param = P.params[idx];
+                            // Convert plain value to normalized using shared helper
+                            const normalized = common.plainToNormalized(param, event.value);
                             self.param_values.set(idx, normalized);
 
                             // Update smoother target with the plain value
                             const plain_value: f32 = @floatCast(event.value);
                             self.smoother_bank.setTarget(idx, self.buffer_config.sample_rate, plain_value);
-                            break;
                         }
                     }
                 }

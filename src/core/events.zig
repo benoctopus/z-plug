@@ -136,6 +136,83 @@ pub const NoteEvent = union(enum) {
             .midi_cc, .midi_channel_pressure, .midi_pitch_bend, .midi_program_change => null,
         };
     }
+
+    // Factory functions for event construction
+    
+    /// Create a note-on event.
+    pub fn noteOn(sample_offset: u32, voice_id: ?i32, ch: u8, note_num: u8, vel: f32) NoteEvent {
+        return .{ .note_on = .{ .timing = sample_offset, .voice_id = voice_id, .channel = ch, .note = note_num, .velocity = vel } };
+    }
+
+    /// Create a note-off event.
+    pub fn noteOff(sample_offset: u32, voice_id: ?i32, ch: u8, note_num: u8, vel: f32) NoteEvent {
+        return .{ .note_off = .{ .timing = sample_offset, .voice_id = voice_id, .channel = ch, .note = note_num, .velocity = vel } };
+    }
+
+    /// Create a choke event (abruptly stop a voice).
+    pub fn chokeNote(sample_offset: u32, voice_id: ?i32, ch: u8, note_num: u8) NoteEvent {
+        return .{ .choke = .{ .timing = sample_offset, .voice_id = voice_id, .channel = ch, .note = note_num, .velocity = 0.0 } };
+    }
+
+    /// Create a voice-terminated event (output only).
+    pub fn voiceTerminated(sample_offset: u32, voice_id: ?i32, ch: u8, note_num: u8) NoteEvent {
+        return .{ .voice_terminated = .{ .timing = sample_offset, .voice_id = voice_id, .channel = ch, .note = note_num, .velocity = 0.0 } };
+    }
+
+    /// Create a polyphonic pressure event.
+    pub fn polyPressure(sample_offset: u32, voice_id: ?i32, ch: u8, note_num: u8, val: f32) NoteEvent {
+        return .{ .poly_pressure = .{ .timing = sample_offset, .voice_id = voice_id, .channel = ch, .note = note_num, .value = val } };
+    }
+
+    /// Create a polyphonic tuning event.
+    pub fn polyTuning(sample_offset: u32, voice_id: ?i32, ch: u8, note_num: u8, val: f32) NoteEvent {
+        return .{ .poly_tuning = .{ .timing = sample_offset, .voice_id = voice_id, .channel = ch, .note = note_num, .value = val } };
+    }
+
+    /// Create a polyphonic vibrato event.
+    pub fn polyVibrato(sample_offset: u32, voice_id: ?i32, ch: u8, note_num: u8, val: f32) NoteEvent {
+        return .{ .poly_vibrato = .{ .timing = sample_offset, .voice_id = voice_id, .channel = ch, .note = note_num, .value = val } };
+    }
+
+    /// Create a polyphonic expression event.
+    pub fn polyExpression(sample_offset: u32, voice_id: ?i32, ch: u8, note_num: u8, val: f32) NoteEvent {
+        return .{ .poly_expression = .{ .timing = sample_offset, .voice_id = voice_id, .channel = ch, .note = note_num, .value = val } };
+    }
+
+    /// Create a polyphonic brightness event.
+    pub fn polyBrightness(sample_offset: u32, voice_id: ?i32, ch: u8, note_num: u8, val: f32) NoteEvent {
+        return .{ .poly_brightness = .{ .timing = sample_offset, .voice_id = voice_id, .channel = ch, .note = note_num, .value = val } };
+    }
+
+    /// Create a polyphonic volume event.
+    pub fn polyVolume(sample_offset: u32, voice_id: ?i32, ch: u8, note_num: u8, val: f32) NoteEvent {
+        return .{ .poly_volume = .{ .timing = sample_offset, .voice_id = voice_id, .channel = ch, .note = note_num, .value = val } };
+    }
+
+    /// Create a polyphonic pan event.
+    pub fn polyPan(sample_offset: u32, voice_id: ?i32, ch: u8, note_num: u8, val: f32) NoteEvent {
+        return .{ .poly_pan = .{ .timing = sample_offset, .voice_id = voice_id, .channel = ch, .note = note_num, .value = val } };
+    }
+
+    /// Create a MIDI CC event.
+    pub fn midiCC(sample_offset: u32, ch: u8, cc_num: u8, val: f32) NoteEvent {
+        return .{ .midi_cc = .{ .timing = sample_offset, .channel = ch, .cc = cc_num, .value = val } };
+    }
+
+    /// Create a MIDI channel pressure event.
+    pub fn midiChannelPressure(sample_offset: u32, ch: u8, val: f32) NoteEvent {
+        return .{ .midi_channel_pressure = .{ .timing = sample_offset, .channel = ch, .value = val } };
+    }
+
+    /// Create a MIDI pitch bend event.
+    pub fn midiPitchBend(sample_offset: u32, ch: u8, val: f32) NoteEvent {
+        return .{ .midi_pitch_bend = .{ .timing = sample_offset, .channel = ch, .value = val } };
+    }
+
+    /// Create a MIDI program change event.
+    pub fn midiProgramChange(sample_offset: u32, ch: u8, prog: u8) NoteEvent {
+        return .{ .midi_program_change = .{ .timing = sample_offset, .channel = ch, .program = prog } };
+    }
 };
 
 // ---------------------------------------------------------------------------

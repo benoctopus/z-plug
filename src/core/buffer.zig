@@ -43,12 +43,12 @@ pub const Buffer = struct {
     }
 
     /// Read a single sample value.
-    pub fn getSample(self: Buffer, ch: usize, sample: usize) f32 {
+    pub inline fn getSample(self: Buffer, ch: usize, sample: usize) f32 {
         return self.channel_data[ch][sample];
     }
 
     /// Write a single sample value.
-    pub fn setSample(self: *Buffer, ch: usize, sample: usize, value: f32) void {
+    pub inline fn setSample(self: *Buffer, ch: usize, sample: usize, value: f32) void {
         self.channel_data[ch][sample] = value;
     }
 

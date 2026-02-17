@@ -6,38 +6,28 @@ const std = @import("std");
 const clap = @import("../../bindings/clap/main.zig");
 const core = @import("../../root.zig");
 const extensions = @import("extensions.zig");
+const common = @import("../common.zig");
 
 /// Wrapper struct for a plugin of type `T`.
 /// The first field MUST be `clap_plugin` so the host can cast the pointer correctly.
 pub fn PluginWrapper(comptime T: type) type {
     const P = core.Plugin(T);
 
-    // Pre-compute parameter IDs at comptime
-    const param_ids = comptime blk: {
-        var ids: [P.params.len]u32 = undefined;
-        for (P.params, 0..) |param, i| {
-            ids[i] = core.idHash(param.id());
-        }
-        break :blk ids;
-    };
-
     return struct {
         const Self = @This();
+
+        // --- FIRST FIELD: Must be clap_plugin for pointer casting ---
 
         /// The CLAP plugin struct that the host interacts with.
         /// MUST be the first field for correct pointer casting.
         clap_plugin: clap.Plugin,
 
-        /// Host pointer for callbacks.
-        host: *const clap.Host,
+        // --- HOT DATA: Audio thread reads/writes these every process() call ---
 
-        /// The actual plugin instance.
-        plugin: T,
+        /// Runtime parameter values (lock-free atomic storage, read every buffer).
+        param_values: core.ParamValues(P.params.len) align(core.CACHE_LINE_SIZE),
 
-        /// Runtime parameter values (lock-free atomic storage).
-        param_values: core.ParamValues(P.params.len),
-
-        /// Smoother bank for parameter value smoothing.
+        /// Smoother bank for parameter value smoothing (written per-sample when smoothing active).
         smoother_bank: core.SmootherBank(P.params.len),
 
         /// Current buffer configuration.
@@ -45,6 +35,12 @@ pub fn PluginWrapper(comptime T: type) type {
 
         /// Current audio I/O layout.
         current_layout: core.AudioIOLayout,
+
+        /// Whether the plugin is currently activated.
+        is_activated: bool,
+
+        /// The actual plugin instance.
+        plugin: T,
 
         /// Pre-allocated storage for input events.
         input_events_storage: [max_events]core.NoteEvent,
@@ -54,13 +50,6 @@ pub fn PluginWrapper(comptime T: type) type {
 
         /// Event output list for plugin to push events.
         event_output_list: core.EventOutputList,
-
-        /// Whether the plugin is currently activated.
-        is_activated: bool,
-
-        /// Pre-allocated storage for auxiliary input buffers.
-        /// [bus_index][channel_index][sample_index]
-        aux_input_storage: [max_aux_buses][max_channels][max_buffer_size]f32,
 
         /// Pre-allocated Buffer structs for auxiliary inputs.
         aux_input_buffers: [max_aux_buses]core.Buffer,
@@ -74,38 +63,28 @@ pub fn PluginWrapper(comptime T: type) type {
         /// Channel slice arrays for auxiliary output buffers.
         aux_output_channel_slices: [max_aux_buses][max_channels][]f32,
 
-        const max_events = 1024;
-        const max_aux_buses = 8;
-        const max_channels = 32;
-        const max_buffer_size = 8192;
+        // --- COLD DATA: Setup/teardown only, not accessed on audio thread ---
 
-        /// Initialize a new plugin wrapper.
-        pub fn init(host: *const clap.Host) !Self {
-            var self = Self{
-                .clap_plugin = undefined,
-                .host = host,
-                .plugin = undefined,
-                .param_values = core.ParamValues(P.params.len).init(P.params),
-                .smoother_bank = core.SmootherBank(P.params.len).init(P.params),
-                .buffer_config = undefined,
-                .current_layout = P.audio_io_layouts[0], // Default to first layout
-                .input_events_storage = undefined,
-                .output_events_storage = undefined,
-                .event_output_list = core.EventOutputList{
-                    .events = &[_]core.NoteEvent{},
-                },
-                .is_activated = false,
-                .aux_input_storage = undefined,
-                .aux_input_buffers = undefined,
-                .aux_input_channel_slices = undefined,
-                .aux_output_buffers = undefined,
-                .aux_output_channel_slices = undefined,
-            };
+        /// Host pointer for callbacks.
+        host: *const clap.Host,
+
+        const max_events = common.max_events;
+        const max_aux_buses = common.max_aux_buses;
+        const max_channels = common.max_channels;
+        const max_buffer_size = common.max_buffer_size;
+
+        /// Initialize a new plugin wrapper in-place.
+        /// The `self` pointer must point to a valid heap-allocated instance.
+        pub fn initInPlace(self: *Self, host: *const clap.Host) void {
+            self.host = host;
+            common.initState(P, self, P.audio_io_layouts[0]);
+            self.is_activated = false;
 
             // Initialize the clap_plugin struct with function pointers
+            // plugin_data now points to the stable heap allocation
             self.clap_plugin = clap.Plugin{
                 .descriptor = undefined, // Set by factory
-                .plugin_data = @ptrCast(&self),
+                .plugin_data = @ptrCast(self),
                 .init = pluginInit,
                 .destroy = pluginDestroy,
                 .activate = pluginActivate,
@@ -118,7 +97,7 @@ pub fn PluginWrapper(comptime T: type) type {
                 .onMainThread = pluginOnMainThread,
             };
 
-            return self;
+            // Large arrays are left uninitialized (will be properly initialized when needed)
         }
 
         /// Get the wrapper from a clap_plugin pointer.
@@ -231,18 +210,12 @@ pub fn PluginWrapper(comptime T: type) type {
                 break :blk @as(usize, @intCast(count));
             } else 0;
 
-            // In-place processing: copy input to output if pointers differ
-            const common_channels = @min(input_count, output_count);
-            for (0..common_channels) |i| {
-                if (@intFromPtr(channel_slices_in[i].ptr) != @intFromPtr(channel_slices_out[i].ptr)) {
-                    @memcpy(channel_slices_out[i], channel_slices_in[i]);
-                }
-            }
-
-            // Zero-fill extra output channels (if output has more channels than input)
-            for (input_count..output_count) |i| {
-                @memset(channel_slices_out[i], 0.0);
-            }
+            // In-place processing: copy input to output if pointers differ, zero-fill extra outputs
+            common.copyInPlace(
+                channel_slices_in[0..input_count],
+                channel_slices_out[0..output_count],
+                frames_count,
+            );
 
             const output_slices = channel_slices_out[0..output_count];
 
@@ -257,19 +230,15 @@ pub fn PluginWrapper(comptime T: type) type {
 
             // Process auxiliary input buses (index > 0)
             if (process.audio_inputs_count > 1) {
-                const aux_buses_available = @min(process.audio_inputs_count - 1, max_aux_buses);
                 for (1..process.audio_inputs_count) |bus_idx| {
                     if (aux_input_count >= max_aux_buses) break;
 
                     const clap_buf = process.audio_inputs[bus_idx];
                     const ch_count = @min(clap_buf.channel_count, max_channels);
 
-                    // Copy auxiliary input data to owned storage
+                    // Point auxiliary input buffers directly to host input buffers (zero-copy)
                     for (0..@intCast(ch_count)) |ch_idx| {
-                        const src = clap_buf.data32.?[ch_idx][0..frames_count];
-                        const dst = self.aux_input_storage[aux_input_count][ch_idx][0..frames_count];
-                        @memcpy(dst, src);
-                        self.aux_input_channel_slices[aux_input_count][ch_idx] = dst;
+                        self.aux_input_channel_slices[aux_input_count][ch_idx] = clap_buf.data32.?[ch_idx][0..frames_count];
                     }
 
                     self.aux_input_buffers[aux_input_count] = core.Buffer{
@@ -277,13 +246,11 @@ pub fn PluginWrapper(comptime T: type) type {
                         .num_samples = @intCast(frames_count),
                     };
                     aux_input_count += 1;
-                    _ = aux_buses_available;
                 }
             }
 
             // Process auxiliary output buses (index > 0)
             if (process.audio_outputs_count > 1) {
-                const aux_buses_available = @min(process.audio_outputs_count - 1, max_aux_buses);
                 for (1..process.audio_outputs_count) |bus_idx| {
                     if (aux_output_count >= max_aux_buses) break;
 
@@ -300,7 +267,6 @@ pub fn PluginWrapper(comptime T: type) type {
                         .num_samples = @intCast(frames_count),
                     };
                     aux_output_count += 1;
-                    _ = aux_buses_available;
                 }
             }
 
@@ -358,15 +324,15 @@ pub fn PluginWrapper(comptime T: type) type {
             };
 
             // Build process context
-            var context = core.ProcessContext{
-                .transport = transport,
-                .input_events = self.input_events_storage[0..input_event_count],
-                .output_events = &self.event_output_list,
-                .sample_rate = self.buffer_config.sample_rate,
-                .param_values_ptr = &self.param_values,
-                .smoothers_ptr = &self.smoother_bank,
-                .params_meta = P.params,
-            };
+            var context = common.buildProcessContext(
+                P,
+                transport,
+                self.input_events_storage[0..input_event_count],
+                &self.event_output_list,
+                self.buffer_config.sample_rate,
+                &self.param_values,
+                &self.smoother_bank,
+            );
 
             // Call plugin process
             const status = P.process(&self.plugin, &buffer, &aux, &context);
@@ -386,8 +352,7 @@ pub fn PluginWrapper(comptime T: type) type {
             };
         }
 
-        fn pluginGetExtension(plugin: *const clap.Plugin, id: [*:0]const u8) callconv(.c) ?*const anyopaque {
-            const self = fromPlugin(plugin);
+        fn pluginGetExtension(_: *const clap.Plugin, id: [*:0]const u8) callconv(.c) ?*const anyopaque {
             const id_slice = std.mem.span(id);
 
             if (std.mem.eql(u8, id_slice, clap.ext.audio_ports.id)) {
@@ -410,7 +375,6 @@ pub fn PluginWrapper(comptime T: type) type {
                 return @ptrCast(&extensions.Extensions(T).state);
             }
 
-            _ = self;
             return null;
         }
 
@@ -426,66 +390,49 @@ pub fn PluginWrapper(comptime T: type) type {
             switch (header.type) {
                 .note_on => {
                     const event: *const clap.events.Note = @ptrCast(@alignCast(header));
-                    out.* = core.NoteEvent{
-                        .note_on = .{
-                            .timing = header.sample_offset,
-                            .voice_id = if (event.note_id == .unspecified) null else @intFromEnum(event.note_id),
-                            .channel = @intCast(@intFromEnum(event.channel)),
-                            .note = @intCast(@intFromEnum(event.key)),
-                            .velocity = @floatCast(event.velocity),
-                        },
-                    };
+                    out.* = core.NoteEvent.noteOn(
+                        header.sample_offset,
+                        if (event.note_id == .unspecified) null else @intFromEnum(event.note_id),
+                        @intCast(@intFromEnum(event.channel)),
+                        @intCast(@intFromEnum(event.key)),
+                        @floatCast(event.velocity),
+                    );
                     return true;
                 },
                 .note_off => {
                     const event: *const clap.events.Note = @ptrCast(@alignCast(header));
-                    out.* = core.NoteEvent{
-                        .note_off = .{
-                            .timing = header.sample_offset,
-                            .voice_id = if (event.note_id == .unspecified) null else @intFromEnum(event.note_id),
-                            .channel = @intCast(@intFromEnum(event.channel)),
-                            .note = @intCast(@intFromEnum(event.key)),
-                            .velocity = @floatCast(event.velocity),
-                        },
-                    };
+                    out.* = core.NoteEvent.noteOff(
+                        header.sample_offset,
+                        if (event.note_id == .unspecified) null else @intFromEnum(event.note_id),
+                        @intCast(@intFromEnum(event.channel)),
+                        @intCast(@intFromEnum(event.key)),
+                        @floatCast(event.velocity),
+                    );
                     return true;
                 },
                 .note_choke => {
                     const event: *const clap.events.Note = @ptrCast(@alignCast(header));
-                    out.* = core.NoteEvent{
-                        .choke = .{
-                            .timing = header.sample_offset,
-                            .voice_id = if (event.note_id == .unspecified) null else @intFromEnum(event.note_id),
-                            .channel = @intCast(@intFromEnum(event.channel)),
-                            .note = @intCast(@intFromEnum(event.key)),
-                            .velocity = 0.0,
-                        },
-                    };
+                    out.* = core.NoteEvent.chokeNote(
+                        header.sample_offset,
+                        if (event.note_id == .unspecified) null else @intFromEnum(event.note_id),
+                        @intCast(@intFromEnum(event.channel)),
+                        @intCast(@intFromEnum(event.key)),
+                    );
                     return true;
                 },
                 .param_value => {
                     const event: *const clap.events.ParamValue = @ptrCast(@alignCast(header));
-                    // Find parameter index by ID
-                    for (P.params, 0..) |param, idx| {
-                        const param_id = param_ids[idx];
-                        if (param_id == @intFromEnum(event.param_id)) {
-                            // Convert plain value to normalized
-                            const normalized = switch (param) {
-                                .float => |p| p.range.normalize(@floatCast(event.value)),
-                                .int => |p| p.range.normalize(@intFromFloat(event.value)),
-                                .boolean => if (event.value > 0.5) @as(f32, 1.0) else @as(f32, 0.0),
-                                .choice => |p| blk: {
-                                    if (p.labels.len <= 1) break :blk 0.0;
-                                    const choice_idx = @min(@as(u32, @intFromFloat(event.value)), @as(u32, @intCast(p.labels.len - 1)));
-                                    break :blk @as(f32, @floatFromInt(choice_idx)) / @as(f32, @floatFromInt(p.labels.len - 1));
-                                },
-                            };
+                    // Find parameter index by ID using binary search
+                    if (P.params.len > 0) {
+                        if (P.findParamIndex(@intFromEnum(event.param_id))) |idx| {
+                            const param = P.params[idx];
+                            // Convert plain value to normalized using shared helper
+                            const normalized = common.plainToNormalized(param, event.value);
                             self.param_values.set(idx, normalized);
 
                             // Update smoother target with the plain value
                             const plain_value: f32 = @floatCast(event.value);
                             self.smoother_bank.setTarget(idx, self.buffer_config.sample_rate, plain_value);
-                            break;
                         }
                     }
                     return false; // Don't add to event list
@@ -493,22 +440,20 @@ pub fn PluginWrapper(comptime T: type) type {
                 .note_expression => {
                     const event: *const clap.events.NoteExpression = @ptrCast(@alignCast(header));
 
-                    const poly_data = core.PolyValueData{
-                        .timing = header.sample_offset,
-                        .voice_id = if (event.note_id == .unspecified) null else @intFromEnum(event.note_id),
-                        .channel = @intCast(@intFromEnum(event.channel)),
-                        .note = @intCast(@intFromEnum(event.key)),
-                        .value = @floatCast(event.value),
-                    };
+                    const timing = header.sample_offset;
+                    const voice_id = if (event.note_id == .unspecified) null else @intFromEnum(event.note_id);
+                    const channel: u8 = @intCast(@intFromEnum(event.channel));
+                    const note: u8 = @intCast(@intFromEnum(event.key));
+                    const value: f32 = @floatCast(event.value);
 
                     out.* = switch (event.expression_id) {
-                        .pressure => core.NoteEvent{ .poly_pressure = poly_data },
-                        .tuning => core.NoteEvent{ .poly_tuning = poly_data },
-                        .vibrato => core.NoteEvent{ .poly_vibrato = poly_data },
-                        .expression => core.NoteEvent{ .poly_expression = poly_data },
-                        .brightness => core.NoteEvent{ .poly_brightness = poly_data },
-                        .volume => core.NoteEvent{ .poly_volume = poly_data },
-                        .pan => core.NoteEvent{ .poly_pan = poly_data },
+                        .pressure => core.NoteEvent.polyPressure(timing, voice_id, channel, note, value),
+                        .tuning => core.NoteEvent.polyTuning(timing, voice_id, channel, note, value),
+                        .vibrato => core.NoteEvent.polyVibrato(timing, voice_id, channel, note, value),
+                        .expression => core.NoteEvent.polyExpression(timing, voice_id, channel, note, value),
+                        .brightness => core.NoteEvent.polyBrightness(timing, voice_id, channel, note, value),
+                        .volume => core.NoteEvent.polyVolume(timing, voice_id, channel, note, value),
+                        .pan => core.NoteEvent.polyPan(timing, voice_id, channel, note, value),
                     };
                     return true;
                 },
@@ -519,24 +464,20 @@ pub fn PluginWrapper(comptime T: type) type {
 
                     switch (status) {
                         0xB0 => { // Control Change
-                            out.* = core.NoteEvent{
-                                .midi_cc = .{
-                                    .timing = header.sample_offset,
-                                    .channel = channel,
-                                    .cc = event.data[1],
-                                    .value = @as(f32, @floatFromInt(event.data[2])) / 127.0,
-                                },
-                            };
+                            out.* = core.NoteEvent.midiCC(
+                                header.sample_offset,
+                                channel,
+                                event.data[1],
+                                @as(f32, @floatFromInt(event.data[2])) / 127.0,
+                            );
                             return true;
                         },
                         0xD0 => { // Channel Pressure
-                            out.* = core.NoteEvent{
-                                .midi_channel_pressure = .{
-                                    .timing = header.sample_offset,
-                                    .channel = channel,
-                                    .value = @as(f32, @floatFromInt(event.data[1])) / 127.0,
-                                },
-                            };
+                            out.* = core.NoteEvent.midiChannelPressure(
+                                header.sample_offset,
+                                channel,
+                                @as(f32, @floatFromInt(event.data[1])) / 127.0,
+                            );
                             return true;
                         },
                         0xE0 => { // Pitch Bend
@@ -545,23 +486,19 @@ pub fn PluginWrapper(comptime T: type) type {
                             const bend_value = (@as(i32, msb) << 7) | @as(i32, lsb);
                             // Convert 0-16383 to -1.0 to +1.0
                             const normalized = (@as(f32, @floatFromInt(bend_value)) - 8192.0) / 8192.0;
-                            out.* = core.NoteEvent{
-                                .midi_pitch_bend = .{
-                                    .timing = header.sample_offset,
-                                    .channel = channel,
-                                    .value = normalized,
-                                },
-                            };
+                            out.* = core.NoteEvent.midiPitchBend(
+                                header.sample_offset,
+                                channel,
+                                normalized,
+                            );
                             return true;
                         },
                         0xC0 => { // Program Change
-                            out.* = core.NoteEvent{
-                                .midi_program_change = .{
-                                    .timing = header.sample_offset,
-                                    .channel = channel,
-                                    .program = event.data[1],
-                                },
-                            };
+                            out.* = core.NoteEvent.midiProgramChange(
+                                header.sample_offset,
+                                channel,
+                                event.data[1],
+                            );
                             return true;
                         },
                         else => return false, // Unsupported MIDI message

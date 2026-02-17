@@ -48,6 +48,10 @@ pub const Transport = @import("core/audio_layout.zig").Transport;
 // State persistence
 pub const SaveContext = @import("core/state.zig").SaveContext;
 pub const LoadContext = @import("core/state.zig").LoadContext;
+
+// Platform constants
+pub const platform = @import("core/platform.zig");
+pub const CACHE_LINE_SIZE = platform.CACHE_LINE_SIZE;
 pub const StateVersion = @import("core/state.zig").StateVersion;
 pub const writeHeader = @import("core/state.zig").writeHeader;
 pub const readHeader = @import("core/state.zig").readHeader;

@@ -127,11 +127,8 @@ pub fn ClapFactory(comptime T: type) type {
                 return null;
             };
 
-            // Initialize the wrapper
-            wrapper.* = plugin.PluginWrapper(T).init(host) catch {
-                std.heap.page_allocator.destroy(wrapper);
-                return null;
-            };
+            // Initialize the wrapper in place (stable pointer)
+            wrapper.initInPlace(host);
 
             // Return pointer to the clap_plugin field (must be first field)
             return &wrapper.clap_plugin;
