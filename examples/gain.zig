@@ -25,7 +25,7 @@ const GainPlugin = struct {
             .name = "Gain",
             .id = "gain",
             .default = 1.0,
-            .range = .{ .min = 0.0, .max = 2.0 },
+            .range = .{ .linear = .{ .min = 0.0, .max = 2.0 } },
             .unit = "",
             .flags = .{},
             .smoothing = .{ .linear = 10.0 },

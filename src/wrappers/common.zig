@@ -91,7 +91,10 @@ pub inline fn buildProcessContext(
 /// VST3 receives pre-normalized values and doesn't need this conversion.
 pub inline fn plainToNormalized(param: core.Param, plain_value: f64) f32 {
     return switch (param) {
-        .float => |p| p.range.normalize(@floatCast(plain_value)),
+        .float => |p| switch (p.range) {
+            .linear => |r| r.normalize(@floatCast(plain_value)),
+            .logarithmic => |r| r.normalize(@floatCast(plain_value)),
+        },
         .int => |p| p.range.normalize(@intFromFloat(plain_value)),
         .boolean => if (plain_value > 0.5) @as(f32, 1.0) else @as(f32, 0.0),
         .choice => |p| blk: {
@@ -108,7 +111,10 @@ pub inline fn plainToNormalized(param: core.Param, plain_value: f64) f32 {
 /// or when saving/loading state.
 pub inline fn normalizedToPlain(param: core.Param, normalized: f32) f64 {
     return switch (param) {
-        .float => |p| p.range.unnormalize(normalized),
+        .float => |p| switch (p.range) {
+            .linear => |r| r.unnormalize(normalized),
+            .logarithmic => |r| r.unnormalize(normalized),
+        },
         .int => |p| @floatFromInt(p.range.unnormalize(normalized)),
         .boolean => if (normalized > 0.5) @as(f64, 1.0) else @as(f64, 0.0),
         .choice => |p| blk: {

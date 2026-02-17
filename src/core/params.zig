@@ -33,6 +33,35 @@ pub const FloatRange = struct {
     }
 };
 
+/// A continuous floating-point parameter range with logarithmic mapping.
+/// Useful for parameters where human perception is logarithmic (frequency, gain).
+pub const LogFloatRange = struct {
+    min: f32,
+    max: f32,
+
+    /// Map a plain value to the normalized 0.0–1.0 range using logarithmic scaling.
+    pub fn normalize(self: LogFloatRange, plain: f32) f32 {
+        if (self.max <= self.min or self.min <= 0.0) return 0.0;
+        const clamped = self.clamp(plain);
+        const log_min = @log(self.min);
+        const log_max = @log(self.max);
+        return (@log(clamped) - log_min) / (log_max - log_min);
+    }
+
+    /// Map a normalized 0.0–1.0 value back to the plain range using logarithmic scaling.
+    pub fn unnormalize(self: LogFloatRange, normalized: f32) f32 {
+        const clamped = std.math.clamp(normalized, 0.0, 1.0);
+        const log_min = @log(self.min);
+        const log_max = @log(self.max);
+        return @exp(log_min + clamped * (log_max - log_min));
+    }
+
+    /// Clamp a plain value to the range [min, max].
+    pub fn clamp(self: LogFloatRange, value: f32) f32 {
+        return std.math.clamp(value, self.min, self.max);
+    }
+};
+
 /// A discrete integer parameter range.
 pub const IntRange = struct {
     min: i32,
@@ -95,8 +124,11 @@ pub const FloatParam = struct {
     id: [:0]const u8,
     /// Default plain value.
     default: f32,
-    /// The value range for this parameter.
-    range: FloatRange,
+    /// The value range - can be linear or logarithmic.
+    range: union(enum) {
+        linear: FloatRange,
+        logarithmic: LogFloatRange,
+    },
     /// Optional step size for hosts that display discrete ticks.
     step_size: ?f32 = null,
     /// Unit label displayed after the value (e.g. "dB", "Hz", "%").
@@ -188,7 +220,10 @@ pub const Param = union(enum) {
     /// Returns the default value of this parameter, normalized to 0.0–1.0.
     pub fn defaultNormalized(self: Param) f32 {
         return switch (self) {
-            .float => |p| p.range.normalize(p.default),
+            .float => |p| switch (p.range) {
+                .linear => |r| r.normalize(p.default),
+                .logarithmic => |r| r.normalize(p.default),
+            },
             .int => |p| p.range.normalize(p.default),
             .boolean => |p| if (p.default) @as(f32, 1.0) else @as(f32, 0.0),
             .choice => |p| blk: {
@@ -202,7 +237,10 @@ pub const Param = union(enum) {
     /// Convert a normalized value to plain (unnormalized) value.
     pub fn toPlain(self: Param, normalized: f32) f32 {
         return switch (self) {
-            .float => |p| p.range.unnormalize(normalized),
+            .float => |p| switch (p.range) {
+                .linear => |r| r.unnormalize(normalized),
+                .logarithmic => |r| r.unnormalize(normalized),
+            },
             .int => |p| @floatFromInt(p.range.unnormalize(normalized)),
             .boolean => if (normalized > 0.5) 1.0 else 0.0,
             .choice => |p| blk: {
@@ -315,7 +353,10 @@ pub fn ParamAccess(comptime N: usize, comptime params_meta: []const Param) type 
             }
 
             const normalized = self.values.get(index);
-            return params_meta[index].float.range.unnormalize(normalized);
+            return switch (params_meta[index].float.range) {
+                .linear => |r| r.unnormalize(normalized),
+                .logarithmic => |r| r.unnormalize(normalized),
+            };
         }
 
         /// Get the current plain value of an int parameter.
@@ -386,6 +427,10 @@ pub const SmoothingStyle = union(enum) {
     /// Exponential smoothing (single-pole IIR) over the specified duration.
     /// Reaches approximately 99.99% of target, then snaps to target.
     exponential: f32,
+    /// Logarithmic interpolation over the specified duration in milliseconds.
+    /// Smooths in log space, producing exponential curves in linear space.
+    /// Useful for frequency sweeps and gain changes.
+    logarithmic: f32,
 };
 
 /// A parameter value smoother that interpolates between current and target
@@ -444,6 +489,22 @@ pub const Smoother = struct {
                 // For exponential, steps_left is just a sentinel until we snap
                 self.steps_left = @intFromFloat(n);
             },
+            .logarithmic => |duration_ms| {
+                // Interpolate in log space: log(y[n]) = log(y[n-1]) + step
+                // Requires both current and target to be positive
+                if (self.current <= 0.0 or new_target <= 0.0) {
+                    // Fallback to linear if either value is non-positive
+                    self.current = new_target;
+                    self.steps_left = 0;
+                    self.step_size = 0.0;
+                    return;
+                }
+
+                const duration_samples = (sample_rate * duration_ms) / 1000.0;
+                self.steps_left = @intFromFloat(@max(1.0, duration_samples));
+                const log_delta = @log(self.target) - @log(self.current);
+                self.step_size = log_delta / @as(f32, @floatFromInt(self.steps_left));
+            },
         }
     }
 
@@ -467,6 +528,17 @@ pub const Smoother = struct {
             },
             .exponential => {
                 self.current += self.step_size * (self.target - self.current);
+                self.steps_left -= 1;
+                if (self.steps_left == 0) {
+                    self.current = self.target; // Snap to exact target
+                }
+                return self.current;
+            },
+            .logarithmic => {
+                // Interpolate in log space: multiply by constant factor each step
+                const log_current = @log(self.current);
+                const log_next = log_current + self.step_size;
+                self.current = @exp(log_next);
                 self.steps_left -= 1;
                 if (self.steps_left == 0) {
                     self.current = self.target; // Snap to exact target
@@ -506,6 +578,31 @@ pub const Smoother = struct {
             }
 
             // Fill remainder with target value (no smoothing)
+            if (samples_to_smooth < out.len) {
+                @memset(out[samples_to_smooth..], self.current);
+            }
+            return;
+        }
+
+        // Optimized path for logarithmic smoothing
+        if (self.style == .logarithmic) {
+            const samples_to_smooth = @min(out.len, self.steps_left);
+            const log_start = @log(self.current);
+            const step = self.step_size;
+
+            // Fill smoothed portion with geometric progression: start * exp(i*step)
+            for (out[0..samples_to_smooth], 0..) |*sample, i| {
+                sample.* = @exp(log_start + step * @as(f32, @floatFromInt(i)));
+            }
+
+            // Update state
+            self.current = @exp(log_start + step * @as(f32, @floatFromInt(samples_to_smooth)));
+            self.steps_left -= @intCast(samples_to_smooth);
+            if (self.steps_left == 0) {
+                self.current = self.target; // Snap to exact target
+            }
+
+            // Fill remainder with target value
             if (samples_to_smooth < out.len) {
                 @memset(out[samples_to_smooth..], self.current);
             }
@@ -662,7 +759,7 @@ test "Param defaultNormalized for float" {
         .name = "Gain",
         .id = "gain",
         .default = 0.0,
-        .range = .{ .min = -24.0, .max = 24.0 },
+        .range = .{ .linear = .{ .min = -24.0, .max = 24.0 } },
     } };
     try std.testing.expectApproxEqAbs(@as(f32, 0.5), p.defaultNormalized(), 1e-6);
 }
@@ -699,7 +796,7 @@ test "ParamValues init and get" {
             .name = "Gain",
             .id = "gain",
             .default = 0.0,
-            .range = .{ .min = -24.0, .max = 24.0 },
+            .range = .{ .linear = .{ .min = -24.0, .max = 24.0 } },
         } },
         .{ .boolean = .{
             .name = "Bypass",
@@ -797,7 +894,7 @@ test "SmootherBank init and setTarget" {
             .name = "Gain",
             .id = "gain",
             .default = 0.0,
-            .range = .{ .min = -24.0, .max = 24.0 },
+            .range = .{ .linear = .{ .min = -24.0, .max = 24.0 } },
             .smoothing = .{ .linear = 10.0 },
         } },
         .{ .int = .{
@@ -826,7 +923,7 @@ test "ParamAccess typed getters" {
             .name = "Gain",
             .id = "gain",
             .default = 0.0,
-            .range = .{ .min = -24.0, .max = 24.0 },
+            .range = .{ .linear = .{ .min = -24.0, .max = 24.0 } },
         } },
         .{ .int = .{
             .name = "Cutoff",
@@ -883,7 +980,7 @@ test "Param toPlain conversion" {
         .name = "Gain",
         .id = "gain",
         .default = 0.0,
-        .range = .{ .min = -24.0, .max = 24.0 },
+        .range = .{ .linear = .{ .min = -24.0, .max = 24.0 } },
     } };
     const float_plain = float_param.toPlain(0.75); // 0.75 normalized = 12.0 in [-24, 24] range
     try std.testing.expectApproxEqAbs(@as(f32, 12.0), float_plain, 1e-4);
@@ -916,4 +1013,104 @@ test "Param toPlain conversion" {
     } };
     const choice_plain = choice_param.toPlain(0.5); // Middle choice
     try std.testing.expectApproxEqAbs(@as(f32, 1.0), choice_plain, 1e-6);
+}
+
+test "LogFloatRange normalize and unnormalize roundtrip" {
+    const range = LogFloatRange{ .min = 20.0, .max = 20000.0 };
+    const plain: f32 = 1000.0;
+    const norm = range.normalize(plain);
+    const back = range.unnormalize(norm);
+    try std.testing.expectApproxEqAbs(plain, back, 1e-3);
+}
+
+test "LogFloatRange perceptually uniform" {
+    const range = LogFloatRange{ .min = 20.0, .max = 20000.0 };
+    // At 50% normalized, should be geometric mean
+    const mid = range.unnormalize(0.5);
+    const expected = @sqrt(20.0 * 20000.0); // ~632.5 Hz
+    try std.testing.expectApproxEqAbs(expected, mid, 1.0);
+}
+
+test "LogFloatRange boundaries" {
+    const range = LogFloatRange{ .min = 20.0, .max = 20000.0 };
+    try std.testing.expectApproxEqAbs(@as(f32, 0.0), range.normalize(20.0), 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), range.normalize(20000.0), 1e-6);
+}
+
+test "LogFloatRange clamp" {
+    const range = LogFloatRange{ .min = 20.0, .max = 20000.0 };
+    try std.testing.expectApproxEqAbs(@as(f32, 20.0), range.clamp(10.0), 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 20000.0), range.clamp(30000.0), 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 1000.0), range.clamp(1000.0), 1e-6);
+}
+
+test "Smoother logarithmic reaches target" {
+    var smoother = Smoother.init(100.0, .{ .logarithmic = 10.0 });
+    const sample_rate = 1000.0;
+
+    smoother.setTarget(sample_rate, 1000.0);
+    try std.testing.expectEqual(@as(u32, 10), smoother.steps_left);
+
+    // Should multiply by constant factor each step
+    const v1 = smoother.next();
+    try std.testing.expect(v1 > 100.0 and v1 < 1000.0);
+
+    const v2 = smoother.next();
+    try std.testing.expect(v2 > v1 and v2 < 1000.0);
+
+    // Last step should snap to target
+    smoother.steps_left = 1;
+    smoother.current = 990.0;
+    const v_last = smoother.next();
+    try std.testing.expectApproxEqAbs(@as(f32, 1000.0), v_last, 1e-6);
+}
+
+test "Smoother logarithmic geometric progression" {
+    var smoother = Smoother.init(100.0, .{ .logarithmic = 10.0 });
+    const sample_rate = 1000.0;
+
+    smoother.setTarget(sample_rate, 1000.0);
+    
+    // The ratio between consecutive samples should be constant (geometric progression)
+    const v1 = smoother.next();
+    const v2 = smoother.next();
+    const v3 = smoother.next();
+    
+    const ratio1 = v2 / v1;
+    const ratio2 = v3 / v2;
+    try std.testing.expectApproxEqAbs(ratio1, ratio2, 1e-4);
+}
+
+test "Smoother logarithmic handles zero gracefully" {
+    var smoother = Smoother.init(0.0, .{ .logarithmic = 10.0 });
+    const sample_rate = 1000.0;
+
+    // Should snap immediately when starting from 0
+    smoother.setTarget(sample_rate, 100.0);
+    try std.testing.expectEqual(@as(u32, 0), smoother.steps_left);
+    try std.testing.expectApproxEqAbs(@as(f32, 100.0), smoother.current, 1e-6);
+}
+
+test "Smoother logarithmic nextBlock optimization" {
+    var smoother = Smoother.init(100.0, .{ .logarithmic = 100.0 });
+    const sample_rate = 44100.0;
+
+    smoother.setTarget(sample_rate, 10000.0);
+    
+    var block: [64]f32 = undefined;
+    smoother.nextBlock(&block);
+    
+    // First sample should be the starting value (before stepping)
+    try std.testing.expectApproxEqAbs(@as(f32, 100.0), block[0], 1e-3);
+    
+    // Second sample should match what next() would return after one step from 100.0
+    var smoother2 = Smoother.init(100.0, .{ .logarithmic = 100.0 });
+    smoother2.setTarget(sample_rate, 10000.0);
+    const expected_second = smoother2.next();
+    try std.testing.expectApproxEqAbs(expected_second, block[1], 1e-3);
+    
+    // Values should be monotonically increasing
+    for (block[0 .. block.len - 1], block[1..]) |curr, next_val| {
+        try std.testing.expect(next_val > curr);
+    }
 }

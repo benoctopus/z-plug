@@ -189,7 +189,10 @@ pub fn Vst3Controller(comptime T: type) type {
                     // Format the value
                     const text = switch (param) {
                         .float => |p| blk: {
-                            const plain = p.range.unnormalize(@floatCast(value_normalized));
+                            const plain = switch (p.range) {
+                                .linear => |r| r.unnormalize(@floatCast(value_normalized)),
+                                .logarithmic => |r| r.unnormalize(@floatCast(value_normalized)),
+                            };
                             var buf: [64]u8 = undefined;
                             const formatted = std.fmt.bufPrint(&buf, "{d:.2}", .{plain}) catch break :blk "?";
                             break :blk formatted;
@@ -242,7 +245,10 @@ pub fn Vst3Controller(comptime T: type) type {
                 const param_id = P.param_ids[i];
                 if (param_id == id) {
                     return switch (param) {
-                        .float => |p| p.range.unnormalize(@floatCast(value_normalized)),
+                        .float => |p| switch (p.range) {
+                            .linear => |r| r.unnormalize(@floatCast(value_normalized)),
+                            .logarithmic => |r| r.unnormalize(@floatCast(value_normalized)),
+                        },
                         .int => |p| @floatFromInt(p.range.unnormalize(@floatCast(value_normalized))),
                         .boolean => value_normalized,
                         .choice => |p| blk: {
@@ -266,7 +272,10 @@ pub fn Vst3Controller(comptime T: type) type {
                 const param_id = P.param_ids[i];
                 if (param_id == id) {
                     return switch (param) {
-                        .float => |p| p.range.normalize(@floatCast(plain_value)),
+                        .float => |p| switch (p.range) {
+                            .linear => |r| r.normalize(@floatCast(plain_value)),
+                            .logarithmic => |r| r.normalize(@floatCast(plain_value)),
+                        },
                         .int => |p| p.range.normalize(@intFromFloat(plain_value)),
                         .boolean => plain_value,
                         .choice => |p| blk: {

@@ -154,13 +154,19 @@ pub fn Extensions(comptime T: type) type {
                 .name = undefined,
                 .module = undefined,
                 .min_value = switch (param) {
-                    .float => |p| p.range.min,
+                    .float => |p| switch (p.range) {
+                        .linear => |r| r.min,
+                        .logarithmic => |r| r.min,
+                    },
                     .int => |p| @floatFromInt(p.range.min),
                     .boolean => 0.0,
                     .choice => 0.0,
                 },
                 .max_value = switch (param) {
-                    .float => |p| p.range.max,
+                    .float => |p| switch (p.range) {
+                        .linear => |r| r.max,
+                        .logarithmic => |r| r.max,
+                    },
                     .int => |p| @floatFromInt(p.range.max),
                     .boolean => 1.0,
                     .choice => |p| @floatFromInt(p.labels.len - 1),

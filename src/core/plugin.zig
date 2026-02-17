@@ -79,7 +79,10 @@ pub const ProcessContext = struct {
         const param = self.params_meta[index];
         const values: *const params_mod.ParamValues(N) = @ptrCast(@alignCast(self.param_values_ptr));
         const normalized = values.get(index);
-        return param.float.range.unnormalize(normalized);
+        return switch (param.float.range) {
+            .linear => |r| r.unnormalize(normalized),
+            .logarithmic => |r| r.unnormalize(normalized),
+        };
     }
 
     /// Get the current plain value of an int parameter at comptime-known index.
@@ -539,7 +542,7 @@ test "ProcessContext parameter access via methods" {
             .name = "Gain",
             .id = "gain",
             .default = 0.0,
-            .range = .{ .min = -24.0, .max = 24.0 },
+            .range = .{ .linear = .{ .min = -24.0, .max = 24.0 } },
         } },
         .{ .int = .{
             .name = "Cutoff",
