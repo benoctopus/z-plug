@@ -1,127 +1,145 @@
 # z-plug
 
-An audio plugin framework for Zig 0.15.2 that allows you to write one plugin module and produce both VST3 and CLAP binaries from the same source.
+Audio plugin framework for Zig. Write a plugin once, get VST3 and CLAP binaries from the same source. Inspired by [nih-plug](https://github.com/robbert-vdh/nih-plug).
 
-## Design Philosophy
+Requires Zig 0.15.2.
 
-Inspired by [nih-plug](https://github.com/robbert-vdh/nih-plug) (Rust), z-plug provides:
-- **API-agnostic plugin interface** — Write plugin code once, target both formats
-- **Comptime-driven metadata** — Leverage Zig's comptime for vtables, parameters, GUIDs
-- **Real-time safety** — No allocations on the audio thread by design
-- **Minimal magic** — Explicit over implicit, minimal ceremony
+## Example
 
-## Project Status
+A minimal gain plugin (`examples/gain.zig`):
 
-✅ **Phase 1: Foundations** — Complete
-- CLAP bindings (Zig 0.15.2 compatible, LGPL v3)
-- VST3 C API bindings (hand-written, ~12 core interfaces, MIT)
-- Build system configured with module support
+```zig
+const z_plug = @import("z_plug");
 
-✅ **Phase 2: Framework Core** — Complete
-- API-agnostic plugin interface with comptime validation
-- Zero-copy buffer abstraction with three iteration strategies
-- Unified note/MIDI event system
-- Parameter system with atomic runtime storage and smoothing
-- State persistence interface (save/load)
-- Audio I/O configuration and transport abstraction
+const GainPlugin = struct {
+    pub const name: [:0]const u8 = "Zig Gain";
+    pub const vendor: [:0]const u8 = "zig-plug";
+    pub const url: [:0]const u8 = "https://github.com/example/zig-plug";
+    pub const version: [:0]const u8 = "0.1.0";
+    pub const plugin_id: [:0]const u8 = "com.zig-plug.gain";
 
-✅ **Phase 3: Format Wrappers** — Complete
-- CLAP wrapper (C struct ABI) with entry point, factory, plugin, and extensions
-- VST3 wrapper (COM vtable ABI) with factory, component, processor, and controller
-- Build system `addPlugin()` helper with platform-specific bundling
-- VST3 macOS bundle creation (Info.plist, PkgInfo, correct directory structure)
-- Platform-specific module init/deinit exports
+    pub const audio_io_layouts = &[_]z_plug.AudioIOLayout{
+        z_plug.AudioIOLayout.STEREO,
+    };
 
-🔄 **Phase 4: Examples and Polish** — In Progress
-- ✅ Example gain plugin (loads and runs in DAWs)
-- ✅ Helper scripts for installing and signing plugins
-- 🔲 Additional example plugins (synth, effects)
-- 🔲 CI/CD integration
+    pub const params = &[_]z_plug.Param{
+        .{ .float = .{
+            .name = "Gain",
+            .id = "gain",
+            .default = 1.0,
+            .range = .{ .min = 0.0, .max = 2.0 },
+            .unit = "",
+            .flags = .{},
+            .smoothing = .{ .linear = 10.0 },
+        } },
+    };
+
+    pub fn init(_: *@This(), _: *const z_plug.AudioIOLayout, _: *const z_plug.BufferConfig) bool {
+        return true;
+    }
+
+    pub fn deinit(_: *@This()) void {}
+
+    pub fn process(
+        _: *@This(),
+        buffer: *z_plug.Buffer,
+        _: *z_plug.AuxBuffers,
+        context: *z_plug.ProcessContext,
+    ) z_plug.ProcessStatus {
+        const num_samples = buffer.num_samples;
+        const num_channels = buffer.channel_data.len;
+
+        var i: usize = 0;
+        while (i < num_samples) : (i += 1) {
+            const gain = context.nextSmoothed(1, 0);
+            for (buffer.channel_data[0..num_channels]) |channel| {
+                channel[i] *= gain;
+            }
+        }
+
+        return z_plug.ProcessStatus.ok();
+    }
+};
+
+// Export both formats
+comptime {
+    _ = z_plug.ClapEntry(GainPlugin);
+    _ = z_plug.Vst3Factory(GainPlugin);
+}
+```
+
+Plugin metadata, parameters, and audio layout are declared as comptime constants. The framework uses them to generate vtables, parameter lists, GUIDs, and lookup tables at compile time. No allocations happen on the audio thread.
 
 ## Building
 
-This project requires Zig 0.15.2. The provided `flake.nix` sets up a development environment with Nix.
+The `flake.nix` provides a dev environment with the right Zig version via Nix + direnv.
 
 ```bash
-# Activate the Zig 0.15.2 environment (if using Nix + direnv)
+# Set up nix + direnv, then run this in the project root:
 direnv allow
+
+# Build example plugins (outputs to plugins/)
+zig build
 
 # Run tests
 zig build test
 
-# Build example plugins (outputs to zig-out/plugins/)
-zig build
+# Install plugins to user directories
+zig build install-plugins
 
-# Install plugins to system directories
-zig build install-plugins                # user directories (default)
-zig build install-plugins -Dsystem=true  # system directories (requires sudo)
+# Install to system directories (requires sudo)
+zig build install-plugins -Dsystem=true
 
 # Sign plugins on macOS (required for most DAWs)
 zig build sign-plugins
 
-# Uninstall plugins
-zig build uninstall-plugins                # user directories
-zig build uninstall-plugins -Dsystem=true  # system directories
+# Uninstall
+zig build uninstall-plugins
 ```
 
-See [docs/getting-started.md](docs/getting-started.md) for detailed setup instructions.
+See [docs/getting-started.md](docs/getting-started.md) for more.
 
 ## Project Structure
 
 ```
 src/
-  core/            # Framework core (API-agnostic) ✅
-    plugin.zig     # Plugin interface & comptime validation
-    params.zig     # Parameter system with smoothing
-    buffer.zig     # Zero-copy audio buffer abstraction
-    events.zig     # Unified note/MIDI events
-    state.zig      # State persistence
+  core/              # Framework core (format-agnostic)
+    plugin.zig       # Plugin interface & comptime validation
+    params.zig       # Parameter system with smoothing
+    buffer.zig       # Audio buffer abstraction
+    events.zig       # Unified note/MIDI events
+    state.zig        # State persistence
     audio_layout.zig # Audio I/O configuration
   bindings/
-    clap/          # CLAP C API bindings (LGPL v3) ✅
-    vst3/          # VST3 C API bindings (MIT) ✅
-  wrappers/        # Format-specific wrappers ✅
-    clap/          # CLAP wrapper implementation
-    vst3/          # VST3 wrapper implementation
-  root.zig         # Public API ✅
-examples/          # Example plugins ✅
-  gain.zig         # Simple gain plugin (CLAP + VST3)
-docs/              # High-level documentation ✅
-build.zig          # Build system with addPlugin() helper ✅
-build_tools/       # Plugin management utilities
-  install_plugins.zig     # Install plugins to system directories
-  sign_plugins.zig        # Code-sign plugins on macOS
-  uninstall_plugins.zig   # Remove installed plugins
+    clap/            # CLAP C API bindings (LGPL v3)
+    vst3/            # VST3 C API bindings (MIT)
+  wrappers/          # Format-specific wrappers
+    clap/            # CLAP wrapper
+    vst3/            # VST3 wrapper
+    common.zig       # Shared wrapper utilities
+  root.zig           # Public API
+examples/
+  gain.zig           # Gain plugin (CLAP + VST3)
+build.zig            # Build system with addPlugin() helper
+build_tools/         # Install/sign/uninstall scripts
+docs/                # Documentation
 ```
-
-## License and Attribution
-
-This project's framework code is licensed under [TBD].
-
-### Third-Party Components
-
-**CLAP Bindings** (`src/bindings/clap/`):
-- Derived from: [clap-zig-bindings](https://git.sr.ht/~interpunct/clap-zig-bindings)
-- License: GNU LGPL v3.0 or later
-- Modifications: Adapted for Zig 0.15.2 compatibility
-- See: `src/bindings/clap/LICENSE` and `src/bindings/clap/NOTICE`
-
-**VST3 Bindings** (`src/bindings/vst3/`):
-- Based on: [Steinberg vst3_c_api](https://github.com/steinbergmedia/vst3_c_api)
-- License: MIT (as of October 2025)
-- Implementation: Hand-written idiomatic Zig bindings
 
 ## Documentation
 
-### For Plugin Authors
-- **[docs/plugin-authors.md](docs/plugin-authors.md)** — Public API guide with examples
-- **[docs/getting-started.md](docs/getting-started.md)** — Development environment setup
+- [docs/plugin-authors.md](docs/plugin-authors.md) -- writing plugins with z-plug
+- [docs/getting-started.md](docs/getting-started.md) -- dev environment setup
+- [docs/architecture.md](docs/architecture.md) -- how the layers fit together
+- [AGENTS.md](AGENTS.md) -- coding standards
 
-### For Contributors
-- **[docs/architecture.md](docs/architecture.md)** — How the layers fit together
-- **[AGENTS.md](AGENTS.md)** — Coding standards and architecture rules
-- **Module READMEs** — See `src/*/README.md` for module-specific docs
+## Status
 
-## Contributing
+The core framework, both wrappers, and the build system work. The example gain plugin loads and runs in DAWs. Still to do: more example plugins, CI, and deciding on a license for the framework itself.
 
-See [AGENTS.md](AGENTS.md) for coding standards and architecture guidelines.
+## License
+
+Framework license: TBD.
+
+**CLAP bindings** (`src/bindings/clap/`): derived from [clap-zig-bindings](https://git.sr.ht/~interpunct/clap-zig-bindings), GNU LGPL v3.0+. See `src/bindings/clap/LICENSE`.
+
+**VST3 bindings** (`src/bindings/vst3/`): based on [Steinberg vst3_c_api](https://github.com/steinbergmedia/vst3_c_api), MIT.
