@@ -56,6 +56,9 @@ pub const StateVersion = @import("core/state.zig").StateVersion;
 pub const writeHeader = @import("core/state.zig").writeHeader;
 pub const readHeader = @import("core/state.zig").readHeader;
 
+// Utility functions for audio DSP
+pub const util = @import("core/util.zig");
+
 // Format wrappers
 pub const ClapEntry = @import("wrappers/clap/entry.zig").ClapEntry;
 pub const Vst3Factory = @import("wrappers/vst3/factory.zig").Vst3Factory;
@@ -68,6 +71,7 @@ test {
     std.testing.refAllDecls(@import("core/params.zig"));
     std.testing.refAllDecls(@import("core/state.zig"));
     std.testing.refAllDecls(@import("core/plugin.zig"));
+    std.testing.refAllDecls(@import("core/util.zig"));
 
     // Wrapper tests
     std.testing.refAllDecls(@import("wrappers/clap/entry.zig"));
