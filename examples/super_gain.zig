@@ -158,8 +158,8 @@ const SuperGainPlugin = struct {
     ) z_plug.ProcessStatus {
         // [Practical] Always flush denormals in real plugins with IIR filters or feedback.
         // For a pure gain plugin this is technically unnecessary, but it's good practice.
-        const ftz = z_plug.util.enableFlushToZero();
-        defer z_plug.util.restoreFloatMode(ftz);
+        const ftz = z_plug.dsp.util.enableFlushToZero();
+        defer z_plug.dsp.util.restoreFloatMode(ftz);
 
         // Read non-smoothed parameters (once per process call)
         const bypass = context.getBool(5, 3);
@@ -204,7 +204,7 @@ const SuperGainPlugin = struct {
             // dB-scale parameters - store in dB (what users understand), convert
             // to linear gain in the inner loop.
             for (gain_db_slice) |*db| {
-                db.* = z_plug.util.dbToGainFast(db.*);
+                db.* = z_plug.dsp.util.dbToGainFast(db.*);
             }
 
             // Get channel slices for this block

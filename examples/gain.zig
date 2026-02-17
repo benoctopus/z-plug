@@ -46,7 +46,7 @@ const GainPlugin = struct {
 
         var i: usize = 0;
         while (i < num_samples) : (i += 1) {
-            const gain = z_plug.util.dbToGainFast(context.nextSmoothed(1, 0));
+            const gain = z_plug.dsp.util.dbToGainFast(context.nextSmoothed(1, 0));
 
             for (buffer.channel_data[0..num_channels]) |channel| {
                 channel[i] *= gain;

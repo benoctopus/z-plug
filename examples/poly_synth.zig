@@ -286,8 +286,8 @@ const PolySynthPlugin = struct {
         context: *z_plug.ProcessContext,
     ) z_plug.ProcessStatus {
         // Enable denormal flushing for performance
-        const ftz = z_plug.util.enableFlushToZero();
-        defer z_plug.util.restoreFloatMode(ftz);
+        const ftz = z_plug.dsp.util.enableFlushToZero();
+        defer z_plug.dsp.util.restoreFloatMode(ftz);
 
         const num_samples = buffer.num_samples;
         const left = buffer.getChannel(0);
@@ -322,9 +322,9 @@ const PolySynthPlugin = struct {
             const detune_cents = context.nextSmoothed(7, 6);
 
             // Convert parameters to rates (per-sample increments)
-            const attack_rate = if (attack_ms > 0.0) 1.0 / z_plug.util.msToSamples(attack_ms, self.sample_rate) else 1.0;
-            const decay_rate = if (decay_ms > 0.0) 1.0 / z_plug.util.msToSamples(decay_ms, self.sample_rate) else 1.0;
-            const release_rate = if (release_ms > 0.0) 1.0 / z_plug.util.msToSamples(release_ms, self.sample_rate) else 1.0;
+            const attack_rate = if (attack_ms > 0.0) 1.0 / z_plug.dsp.util.msToSamples(attack_ms, self.sample_rate) else 1.0;
+            const decay_rate = if (decay_ms > 0.0) 1.0 / z_plug.dsp.util.msToSamples(decay_ms, self.sample_rate) else 1.0;
+            const release_rate = if (release_ms > 0.0) 1.0 / z_plug.dsp.util.msToSamples(release_ms, self.sample_rate) else 1.0;
 
             // Render all active voices
             var output_sample: f32 = 0.0;
@@ -348,13 +348,17 @@ const PolySynthPlugin = struct {
                     continue;
                 }
 
-                // Apply detune to frequency
-                const detune_ratio = z_plug.util.semitonesToRatio(detune_cents / 100.0);
+                // Apply detune to frequency (but don't store it - calculate per-sample)
+                const detune_ratio = z_plug.dsp.util.semitonesToRatio(detune_cents / 100.0);
                 const detuned_freq = voice.freq * detune_ratio;
-                voice.freq = detuned_freq;
 
-                // Advance phase
-                voice.tickPhase(self.sample_rate);
+                // Advance phase with detuned frequency
+                const phase_delta = detuned_freq / self.sample_rate;
+                voice.phase += phase_delta;
+                // Wrap phase to [0..1)
+                while (voice.phase >= 1.0) {
+                    voice.phase -= 1.0;
+                }
 
                 // Generate oscillator sample based on waveform choice
                 const osc_sample = switch (waveform) {
@@ -370,7 +374,7 @@ const PolySynthPlugin = struct {
             }
 
             // Apply master gain
-            const gain = z_plug.util.dbToGainFast(gain_db);
+            const gain = z_plug.dsp.util.dbToGainFast(gain_db);
             const final_sample = output_sample * gain * 0.2; // Scale down for multiple voices
 
             // Write to stereo output (mono summed to both channels)
@@ -407,7 +411,7 @@ const PolySynthPlugin = struct {
 
     /// Allocate a voice for a new note
     fn allocateVoice(self: *@This(), note: u8, velocity: f32, channel: u8, voice_id: ?i32) void {
-        const freq = z_plug.util.midiNoteToFreq(note);
+        const freq = z_plug.dsp.util.midiNoteToFreq(note);
 
         // First, try to find an idle voice
         for (&self.voices) |*voice| {

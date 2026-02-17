@@ -58,11 +58,12 @@ pub const StateVersion = @import("core/state.zig").StateVersion;
 pub const writeHeader = @import("core/state.zig").writeHeader;
 pub const readHeader = @import("core/state.zig").readHeader;
 
-// Utility functions for audio DSP
-pub const util = @import("core/util.zig");
+// DSP building blocks namespace
+pub const dsp = @import("dsp/root.zig");
 
-// Metering utilities for peak, RMS, and LUFS measurement
-pub const metering = @import("core/metering.zig");
+// Backward-compatible aliases (deprecated -- use z_plug.dsp.*)
+pub const util = dsp.util;
+pub const metering = dsp.metering;
 
 // Format wrappers
 pub const ClapEntry = @import("wrappers/clap/entry.zig").ClapEntry;
@@ -76,8 +77,17 @@ test {
     std.testing.refAllDecls(@import("core/params.zig"));
     std.testing.refAllDecls(@import("core/state.zig"));
     std.testing.refAllDecls(@import("core/plugin.zig"));
-    std.testing.refAllDecls(@import("core/util.zig"));
-    std.testing.refAllDecls(@import("core/metering.zig"));
+
+    // DSP module tests
+    std.testing.refAllDecls(@import("dsp/util/conversions.zig"));
+    std.testing.refAllDecls(@import("dsp/util/denormals.zig"));
+    std.testing.refAllDecls(@import("dsp/metering/biquad.zig"));
+    std.testing.refAllDecls(@import("dsp/metering/peak.zig"));
+    std.testing.refAllDecls(@import("dsp/metering/rms.zig"));
+    std.testing.refAllDecls(@import("dsp/metering/true_peak.zig"));
+    std.testing.refAllDecls(@import("dsp/metering/lufs.zig"));
+    std.testing.refAllDecls(@import("dsp/stft/config.zig"));
+    std.testing.refAllDecls(@import("dsp/stft/processor.zig"));
 
     // Wrapper tests
     std.testing.refAllDecls(@import("wrappers/clap/entry.zig"));

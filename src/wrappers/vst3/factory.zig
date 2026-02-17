@@ -177,9 +177,20 @@ pub fn Vst3Factory(comptime T: type) type {
 
             info.class_flags = 0;
 
-            // Subcategories (e.g., "Fx|EQ" for an EQ effect)
+            // Determine subcategory based on audio I/O layout
+            // Instrument: no input, has output
+            // Effect: has input
+            const is_instrument = blk: {
+                const layout = P.audio_io_layouts[0];
+                if (layout.main_input_channels == null and layout.main_output_channels != null) {
+                    break :blk true;
+                }
+                break :blk false;
+            };
+
+            // Subcategories (e.g., "Fx|EQ" for an EQ effect, "Instrument|Synth" for synth)
             @memset(&info.subcategories, 0);
-            const subcategory = "Fx";
+            const subcategory = if (is_instrument) "Instrument|Synth" else "Fx";
             @memcpy(info.subcategories[0..subcategory.len], subcategory);
 
             // Vendor

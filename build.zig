@@ -183,6 +183,30 @@ pub fn build(b: *std.Build) void {
         },
     });
 
+    // KissFFT C library (BSD-3-Clause, vendored)
+    // Used by STFT module for real-valued FFT operations
+    const kissfft_lib = b.addLibrary(.{
+        .name = "kissfft",
+        .root_module = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+        }),
+        .linkage = .static,
+    });
+    kissfft_lib.addCSourceFiles(.{
+        .files = &.{
+            "vendor/kissfft/kiss_fft.c",
+            "vendor/kissfft/kiss_fftr.c",
+        },
+        .flags = &.{"-DNDEBUG"}, // Disable KissFFT debug logging
+    });
+    kissfft_lib.addIncludePath(b.path("vendor/kissfft"));
+    kissfft_lib.linkLibC();
+
+    // Link KissFFT to the z_plug module so STFT can use it
+    mod.addIncludePath(b.path("vendor/kissfft"));
+    mod.linkLibrary(kissfft_lib);
+
     // Build example gain plugin
     addPlugin(b, .{
         .name = "ZigGain",
@@ -209,6 +233,112 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .formats = .{ .clap = true, .vst3 = true },
     });
+
+    // Build example spectral processing plugin (STFT + spectral gate)
+    // Now uses the z_plug STFT module, which already has KissFFT linked
+    {
+        const spectral_clap = b.addLibrary(.{
+            .name = "ZigSpectral",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("examples/spectral.zig"),
+                .target = target,
+                .optimize = optimize,
+                .imports = &.{
+                    .{ .name = "z_plug", .module = mod },
+                },
+            }),
+            .linkage = .dynamic,
+        });
+
+        // Install as .clap
+        const install_spectral_clap = b.addInstallArtifact(spectral_clap, .{
+            .dest_dir = .{ .override = .{ .custom = "plugins" } },
+        });
+        const spectral_clap_rename = b.addInstallFile(
+            spectral_clap.getEmittedBin(),
+            "plugins/ZigSpectral.clap",
+        );
+        spectral_clap_rename.step.dependOn(&install_spectral_clap.step);
+        b.getInstallStep().dependOn(&spectral_clap_rename.step);
+
+        // Build VST3 version
+        const spectral_vst3 = b.addLibrary(.{
+            .name = "ZigSpectral",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("examples/spectral.zig"),
+                .target = target,
+                .optimize = optimize,
+                .imports = &.{
+                    .{ .name = "z_plug", .module = mod },
+                },
+            }),
+            .linkage = .dynamic,
+        });
+
+        // Install as VST3 bundle
+        const target_info = target.result;
+        if (target_info.os.tag == .macos) {
+            const bundle_dir = "plugins/ZigSpectral.vst3/Contents/MacOS";
+            const install_spectral_vst3 = b.addInstallArtifact(spectral_vst3, .{
+                .dest_dir = .{ .override = .{ .custom = bundle_dir } },
+            });
+            const rename_binary = b.addInstallFile(
+                spectral_vst3.getEmittedBin(),
+                "plugins/ZigSpectral.vst3/Contents/MacOS/ZigSpectral",
+            );
+            rename_binary.step.dependOn(&install_spectral_vst3.step);
+
+            const info_plist_content =
+                \\<?xml version="1.0" encoding="UTF-8"?>
+                \\<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+                \\<plist version="1.0">
+                \\  <dict>
+                \\    <key>CFBundleExecutable</key>
+                \\    <string>ZigSpectral</string>
+                \\    <key>CFBundleIdentifier</key>
+                \\    <string>com.zplugin.ZigSpectral</string>
+                \\    <key>CFBundleName</key>
+                \\    <string>ZigSpectral</string>
+                \\    <key>CFBundlePackageType</key>
+                \\    <string>BNDL</string>
+                \\    <key>CFBundleSignature</key>
+                \\    <string>????</string>
+                \\    <key>CFBundleVersion</key>
+                \\    <string>1.0.0</string>
+                \\    <key>NSHighResolutionCapable</key>
+                \\    <true/>
+                \\  </dict>
+                \\</plist>
+                \\
+            ;
+            const write_files = b.addWriteFiles();
+            const info_plist_file = write_files.add("Info.plist", info_plist_content);
+            const pkginfo_file = write_files.add("PkgInfo", "BNDL????");
+
+            const install_info_plist = b.addInstallFile(
+                info_plist_file,
+                "plugins/ZigSpectral.vst3/Contents/Info.plist",
+            );
+            const install_pkginfo = b.addInstallFile(
+                pkginfo_file,
+                "plugins/ZigSpectral.vst3/Contents/PkgInfo",
+            );
+
+            b.getInstallStep().dependOn(&rename_binary.step);
+            b.getInstallStep().dependOn(&install_info_plist.step);
+            b.getInstallStep().dependOn(&install_pkginfo.step);
+        } else {
+            const install_spectral_vst3 = b.addInstallArtifact(spectral_vst3, .{
+                .dest_dir = .{ .override = .{ .custom = "plugins" } },
+            });
+            const spectral_vst3_rename = b.addInstallFile(
+                spectral_vst3.getEmittedBin(),
+                "plugins/ZigSpectral.vst3",
+            );
+            spectral_vst3_rename.step.dependOn(&install_spectral_vst3.step);
+            b.getInstallStep().dependOn(&spectral_vst3_rename.step);
+        }
+    }
 
     // Here we define an executable. An executable needs to have a root module
     // which needs to expose a `main` function. While we could add a main function

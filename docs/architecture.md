@@ -11,9 +11,9 @@ zig-plug follows a layered architecture inspired by [nih-plug](https://github.co
 │          Plugin Author Code                  │
 │   (Your plugin: struct with declarations)    │
 ├──────────────────────────────────────────────┤
-│          Framework Core                      │
-│   (API-agnostic types: Plugin, Buffer,      │
-│    NoteEvent, Param, ProcessContext)         │
+│          Framework Core + DSP                │
+│   Core: Plugin, Buffer, NoteEvent, Param    │
+│   DSP: util, metering, stft (optional)      │
 ├───────────────────┬──────────────────────────┤
 │   CLAP Wrapper    │     VST3 Wrapper         │
 │  (C struct ABI)   │  (COM vtable ABI)        │
@@ -30,13 +30,17 @@ zig-plug follows a layered architecture inspired by [nih-plug](https://github.co
 - Never imports or references CLAP or VST3 types directly
 - Uses only framework core types from `@import("z_plug")`
 
-**2. Framework Core** (`src/core/`)
-- API-agnostic abstractions: `Plugin(T)`, `Buffer`, `NoteEvent`, `Param`, etc.
-- Comptime validation of plugin structs
-- Zero-copy buffer wrappers, lock-free parameter storage
-- Platform constants (`platform.zig`): cache line size, optimal SIMD vector length
-- Audio utilities (`util.zig`): dB/gain, MIDI/frequency, time conversions, denormal flushing
-- **No format-specific code allowed in this layer**
+**2. Framework Core** (`src/core/`) + **DSP Building Blocks** (`src/dsp/`)
+- **Core**: API-agnostic abstractions: `Plugin(T)`, `Buffer`, `NoteEvent`, `Param`, etc.
+  - Comptime validation of plugin structs
+  - Zero-copy buffer wrappers, lock-free parameter storage
+  - Platform constants (`platform.zig`): cache line size, optimal SIMD vector length
+  - **No format-specific code allowed in this layer**
+- **DSP**: Optional utilities for plugin authors (accessed via `z_plug.dsp.*`):
+  - `util`: dB/gain, MIDI/frequency, time conversions, denormal flushing
+  - `metering`: PeakMeter, RmsMeter, TruePeakMeter, LufsMeter (ITU-R BS.1770, EBU R128)
+  - `stft`: Comptime-parameterized STFT processor for spectral effects (uses KissFFT)
+  - Dependency direction: `dsp/ --> core/platform.zig` (one-way, no circular deps)
 
 **3. Format Wrappers** (`src/wrappers/clap/`, `src/wrappers/vst3/`, `src/wrappers/common.zig`)
 - Translate between framework core and format-specific ABIs
@@ -156,7 +160,8 @@ The plugin sees a simple `[]const NoteEvent` slice, agnostic of the underlying f
 
 ## Module Relationships
 
-- `src/root.zig` re-exports types from `src/core/` for plugin authors (including `platform` and `util`)
+- `src/root.zig` re-exports types from `src/core/` and `src/dsp/` for plugin authors
+- `src/dsp/` modules import `src/core/platform.zig` for SIMD constants (one-way dependency)
 - `src/core/` modules import each other (e.g., `plugin.zig` imports `buffer.zig`, `events.zig`, `params.zig`)
 - `src/wrappers/common.zig` provides shared utilities used by both CLAP and VST3 wrappers
 - `src/wrappers/` imports both `src/core/`, `src/wrappers/common.zig`, and `src/bindings/`
@@ -164,6 +169,7 @@ The plugin sees a simple `[]const NoteEvent` slice, agnostic of the underlying f
 
 See each module's `README.md` for detailed structure:
 - [src/core/README.md](../src/core/README.md)
+- [src/dsp/README.md](../src/dsp/README.md)
 - [src/wrappers/clap/README.md](../src/wrappers/clap/README.md)
 - [src/wrappers/vst3/README.md](../src/wrappers/vst3/README.md)
 - [src/bindings/clap/README.md](../src/bindings/clap/README.md)

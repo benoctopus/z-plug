@@ -11,8 +11,11 @@ This module defines the plugin interface and all core abstractions:
 - Parameter system (`Param`, `ParamValues`)
 - State persistence (`SaveContext`, `LoadContext`)
 - Audio I/O configuration (`AudioIOLayout`, `BufferConfig`, `Transport`)
+- Platform constants (`CACHE_LINE_SIZE`, `SIMD_VEC_LEN`, `F32xV`)
 
 Plugin authors import these types via `@import("z_plug")`, which re-exports from this module.
+
+DSP utilities (conversions, metering, STFT) are in a separate `src/dsp/` module (see [`src/dsp/README.md`](../dsp/README.md)).
 
 ## Files
 
@@ -25,7 +28,6 @@ Plugin authors import these types via `@import("z_plug")`, which re-exports from
 | `state.zig` | State save/load interface (`SaveContext`, `LoadContext`) using Zig 0.15.2 I/O |
 | `audio_layout.zig` | Audio I/O layouts, buffer config, process modes, MIDI config, transport info |
 | `platform.zig` | Platform constants: `CACHE_LINE_SIZE`, `SIMD_VEC_LEN`, `F32xV` |
-| `util.zig` | Audio utilities: dB/gain conversions, MIDI note/frequency, time/sample conversions, pitch utilities, denormal flushing |
 
 ## Key Types
 
@@ -73,14 +75,6 @@ Plugin authors import these types via `@import("z_plug")`, which re-exports from
 - **`CACHE_LINE_SIZE`** — L2 cache line size: 128 bytes on aarch64 (Apple Silicon), 64 bytes on x86_64.
 - **`SIMD_VEC_LEN`** — Optimal SIMD vector length for f32 (uses `std.simd.suggestVectorLength`).
 - **`F32xV`** — Platform-optimal `@Vector(SIMD_VEC_LEN, f32)` type.
-
-### Utilities
-
-- **dB/gain**: `dbToGain()`, `dbToGainFast()`, `gainToDb()`, `gainToDbFast()` with -100 dB floor clamping.
-- **MIDI/frequency**: `midiNoteToFreq()`, `midiNoteToFreqF32()`, `freqToMidiNote()`, `note_names` array.
-- **Time**: `msToSamples()`, `samplesToMs()`, `bpmToHz()`, `hzToBpm()`.
-- **Pitch**: `semitonesToRatio()`, `ratioToSemitones()`.
-- **Denormal flushing**: `FloatMode`, `enableFlushToZero()`, `restoreFloatMode()` — platform-specific (aarch64 FPCR, x86_64 MXCSR).
 
 ### State Persistence
 
@@ -150,7 +144,8 @@ Each file includes test blocks at the bottom covering:
 - `buffer.zig`: Iteration strategies, zero-copy pointer identity
 - `state.zig`: SaveContext/LoadContext roundtrips, header validation
 - `plugin.zig`: Comptime validation with valid and invalid plugin structs
-- `util.zig`: dB/gain conversions, MIDI note/frequency roundtrips, time conversions, pitch utilities
+
+DSP module tests (util, metering, STFT) are in `src/dsp/` (see [`src/dsp/README.md`](../dsp/README.md)).
 
 Run tests with:
 ```bash
@@ -159,6 +154,7 @@ zig build test
 
 ## See Also
 
+- [`src/dsp/README.md`](../dsp/README.md) — DSP utilities and processors module
 - [docs/architecture.md](../../docs/architecture.md) — How core fits into the overall architecture
 - [docs/plugin-authors.md](../../docs/plugin-authors.md) — Public API guide for writing plugins
 - [src/root.zig](../root.zig) — Public API re-exports

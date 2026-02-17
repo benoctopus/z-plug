@@ -242,14 +242,20 @@ pub fn Vst3Component(comptime T: type) type {
         }
 
         fn getBusCount(_: *anyopaque, media_type: vst3.types.MediaType, dir: vst3.types.BusDirection) callconv(.c) i32 {
-            if (media_type != @intFromEnum(vst3.types.MediaTypes.kAudio)) return 0;
-
             const layout = P.audio_io_layouts[0];
 
-            if (dir == @intFromEnum(vst3.types.BusDirections.kInput)) {
-                if (layout.main_input_channels != null) return 1;
-            } else {
-                if (layout.main_output_channels != null) return 1;
+            if (media_type == @intFromEnum(vst3.types.MediaTypes.kAudio)) {
+                if (dir == @intFromEnum(vst3.types.BusDirections.kInput)) {
+                    if (layout.main_input_channels != null) return 1;
+                } else {
+                    if (layout.main_output_channels != null) return 1;
+                }
+            } else if (media_type == @intFromEnum(vst3.types.MediaTypes.kEvent)) {
+                if (dir == @intFromEnum(vst3.types.BusDirections.kInput)) {
+                    if (P.midi_input != .none) return 1;
+                } else {
+                    if (P.midi_output != .none) return 1;
+                }
             }
 
             return 0;
@@ -262,34 +268,65 @@ pub fn Vst3Component(comptime T: type) type {
             index: i32,
             info: *vst3.component.BusInfo,
         ) callconv(.c) vst3.tresult {
-            if (media_type != @intFromEnum(vst3.types.MediaTypes.kAudio) or index != 0) return vst3.types.kResultFalse;
+            if (index != 0) return vst3.types.kResultFalse;
 
-            const layout = P.audio_io_layouts[0];
+            if (media_type == @intFromEnum(vst3.types.MediaTypes.kAudio)) {
+                const layout = P.audio_io_layouts[0];
 
-            const channel_count = if (dir == @intFromEnum(vst3.types.BusDirections.kInput))
-                layout.main_input_channels orelse return vst3.types.kResultFalse
-            else
-                layout.main_output_channels orelse return vst3.types.kResultFalse;
+                const channel_count = if (dir == @intFromEnum(vst3.types.BusDirections.kInput))
+                    layout.main_input_channels orelse return vst3.types.kResultFalse
+                else
+                    layout.main_output_channels orelse return vst3.types.kResultFalse;
 
-            info.* = vst3.component.BusInfo{
-                .media_type = @intFromEnum(vst3.types.MediaTypes.kAudio),
-                .direction = dir,
-                .channel_count = @intCast(channel_count),
-                .name = undefined,
-                .bus_type = @intFromEnum(vst3.types.BusTypes.kMain),
-                .flags = @intCast(@intFromEnum(vst3.component.BusInfo.BusFlags.kDefaultActive)),
-            };
+                info.* = vst3.component.BusInfo{
+                    .media_type = @intFromEnum(vst3.types.MediaTypes.kAudio),
+                    .direction = dir,
+                    .channel_count = @intCast(channel_count),
+                    .name = undefined,
+                    .bus_type = @intFromEnum(vst3.types.BusTypes.kMain),
+                    .flags = @intCast(@intFromEnum(vst3.component.BusInfo.BusFlags.kDefaultActive)),
+                };
 
-            // Set bus name
-            @memset(&info.name, 0);
-            const name_str = if (dir == @intFromEnum(vst3.types.BusDirections.kInput)) "Audio Input" else "Audio Output";
-            // Convert UTF-8 to UTF-16 at runtime
-            var i: usize = 0;
-            while (i < name_str.len and i < 128) : (i += 1) {
-                info.name[i] = name_str[i];
+                // Set bus name
+                @memset(&info.name, 0);
+                const name_str = if (dir == @intFromEnum(vst3.types.BusDirections.kInput)) "Audio Input" else "Audio Output";
+                // Convert UTF-8 to UTF-16 at runtime
+                var i: usize = 0;
+                while (i < name_str.len and i < 128) : (i += 1) {
+                    info.name[i] = name_str[i];
+                }
+
+                return vst3.types.kResultOk;
+            } else if (media_type == @intFromEnum(vst3.types.MediaTypes.kEvent)) {
+                const has_events = if (dir == @intFromEnum(vst3.types.BusDirections.kInput))
+                    P.midi_input != .none
+                else
+                    P.midi_output != .none;
+
+                if (!has_events) return vst3.types.kResultFalse;
+
+                info.* = vst3.component.BusInfo{
+                    .media_type = @intFromEnum(vst3.types.MediaTypes.kEvent),
+                    .direction = dir,
+                    .channel_count = 1, // Event buses have 1 "channel"
+                    .name = undefined,
+                    .bus_type = @intFromEnum(vst3.types.BusTypes.kMain),
+                    .flags = @intCast(@intFromEnum(vst3.component.BusInfo.BusFlags.kDefaultActive)),
+                };
+
+                // Set bus name
+                @memset(&info.name, 0);
+                const name_str = if (dir == @intFromEnum(vst3.types.BusDirections.kInput)) "Event Input" else "Event Output";
+                // Convert UTF-8 to UTF-16 at runtime
+                var i: usize = 0;
+                while (i < name_str.len and i < 128) : (i += 1) {
+                    info.name[i] = name_str[i];
+                }
+
+                return vst3.types.kResultOk;
             }
 
-            return vst3.types.kResultOk;
+            return vst3.types.kResultFalse;
         }
 
         fn getRoutingInfo(_: *anyopaque, _: *vst3.component.RoutingInfo, _: *vst3.component.RoutingInfo) callconv(.c) vst3.tresult {
