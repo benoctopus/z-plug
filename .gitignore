@@ -1,4 +1,5 @@
 /target
+/zloader/target
 /zig-out
 /.zig-cache
 

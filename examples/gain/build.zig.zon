@@ -1,0 +1,14 @@
+.{
+    .name = .zig_gain,
+    .version = "0.1.0",
+    .fingerprint = 0x18ffcee340d5365b,
+    .minimum_zig_version = "0.15.2",
+    .dependencies = .{
+        .z_plug = .{ .path = "../.." },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

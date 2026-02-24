@@ -15,7 +15,7 @@
           inherit system overlays;
         };
 
-        rustToolchain = pkgs.rust-bin.stable.latest.default.override {
+        rustToolchain = pkgs.rust-bin.stable."1.93.0".default.override {
           extensions = [
             "rust-src"
             "rust-analyzer"
@@ -30,7 +30,7 @@
             # Zig tooling
             zvm
 
-            # Rust toolchain
+            # Rust toolchain (pinned — update version here when upgrading)
             rustToolchain
 
             # Debugging tools
@@ -65,12 +65,11 @@
 
             # Status messages
             echo "Dev environment loaded"
-            echo "Zig version: $(zig version)"
-            echo "Rust version: $(rustc --version)"
-            echo "Cargo version: $(cargo --version)"
+            echo "  Zig:   $(zig version)"
+            echo "  Rust:  $(rustc --version)"
+            echo "  Cargo: $(cargo --version)"
           '';
 
-          # Environment variables for rust-analyzer
           RUST_LOG = "info";
         };
       }

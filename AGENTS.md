@@ -14,15 +14,15 @@ This project's framework code is licensed under the **Mozilla Public License 2.0
 The project also includes third-party bindings with their own licenses:
 
 **CLAP bindings** (GNU LGPL v3.0):
-- Location: `src/bindings/clap/`
+- Location: `lib/z_plug/bindings/clap/`
 - Original source: [clap-zig-bindings](https://git.sr.ht/~interpunct/clap-zig-bindings)
 - Modified for: Zig 0.15.2 compatibility
-- License file: `src/bindings/clap/LICENSE`
+- License file: `lib/z_plug/bindings/clap/LICENSE`
 
 **VST3 bindings** (MIT):
-- Location: `src/bindings/vst3/`
+- Location: `lib/z_plug/bindings/vst3/`
 - Based on: [Steinberg vst3_c_api](https://github.com/steinbergmedia/vst3_c_api)
-- License file: `src/bindings/vst3/LICENSE`
+- License file: `lib/z_plug/bindings/vst3/LICENSE`
 
 When distributing binaries or using this framework, comply with all applicable license requirements.
 
@@ -141,45 +141,78 @@ Wrappers copy pointers, **never audio data**, from format-specific buffers into 
 Follow this project structure:
 
 ```
-src/
-  core/              # Framework core (API-agnostic)
-    plugin.zig       # PluginInterface, comptime validation
-    params.zig       # Parameter declaration, metadata, smoothing
-    buffer.zig       # Buffer abstraction, iterators
-    events.zig       # NoteEvent tagged union
-    state.zig        # State save/load interface
-    audio_layout.zig # AudioIOLayout, BufferConfig
-  wrappers/
-    clap/            # CLAP format wrapper
-      entry.zig      # clap_entry, clap_plugin_factory
-      plugin.zig     # clap_plugin implementation
-      params.zig     # CLAP params extension
-      ports.zig      # audio-ports, note-ports extensions
-      state.zig      # CLAP state extension
-    vst3/            # VST3 format wrapper
-      factory.zig    # IPluginFactory, GetPluginFactory export
-      component.zig  # IComponent implementation
-      processor.zig  # IAudioProcessor implementation
-      controller.zig # IEditController implementation
-      com.zig        # FUnknown, queryInterface, COM helpers
-  bindings/
-    clap.zig         # Low-level CLAP C API bindings
-    vst3.zig         # Low-level VST3 C API bindings
-  root.zig           # Public API re-exports for plugin authors
-build.zig            # Build system: addPlugin helper
+lib/
+  z_plug/            # Framework library
+    core/            # Framework core (API-agnostic)
+      plugin.zig     # PluginInterface, comptime validation
+      params.zig     # Parameter declaration, metadata, smoothing
+      buffer.zig     # Buffer abstraction, iterators
+      events.zig     # NoteEvent tagged union
+      state.zig      # State save/load interface
+      audio_layout.zig # AudioIOLayout, BufferConfig
+    dsp/             # DSP building blocks
+      util/          # Conversion utilities, denormals
+      metering/      # Peak, RMS, true-peak, LUFS meters
+      stft/          # STFT spectral processing
+    wrappers/
+      clap/          # CLAP format wrapper
+        entry.zig    # clap_entry, clap_plugin_factory
+        plugin.zig   # clap_plugin implementation
+        extensions.zig # CLAP extensions
+      vst3/          # VST3 format wrapper
+        factory.zig  # IPluginFactory, GetPluginFactory export
+        component.zig # IComponent implementation
+        controller.zig # IEditController implementation
+        com.zig      # FUnknown, queryInterface, COM helpers
+    bindings/
+      clap/          # Low-level CLAP C API bindings
+      vst3/          # Low-level VST3 C API bindings
+    root.zig         # Public API re-exports for plugin authors
+vendor/
+  kissfft/           # KissFFT C library (BSD-3-Clause)
+examples/
+  gain/              # Standalone plugin project
+    build.zig        # Uses z_plug.addPlugin()
+    build.zig.zon    # Path dependency on ../..
+    src/plugin.zig   # Plugin implementation
+  super_gain/        # (same structure)
+  poly_synth/        # (same structure)
+  spectral/          # (same structure)
+build.zig            # Root build: module setup + public addPlugin helpers
+build.zig.zon        # Package manifest
 ```
 
 - One concern per file. Keep files focused and under ~500 lines where feasible.
-- Public API that plugin authors use goes through `src/root.zig`.
+- Public API that plugin authors use goes through `lib/z_plug/root.zig`.
 - Bindings are thin and mechanical — no framework logic in the bindings layer.
 
 ## Build System
 
-The build system (`build.zig`) must:
-- Provide an `addPlugin()` function that accepts plugin metadata, source file, and target formats.
-- Compile as shared library: `.clap` (single `.so`/`.dylib`/`.dll`), `.vst3` (bundle structure).
-- Handle platform-specific bundling: macOS `.vst3` bundle directory structure, Linux `.so` paths, Windows `.dll`.
-- Support cross-compilation via Zig's built-in cross-compilation support.
+The build system provides two levels of API:
+
+**For external plugin repositories:**
+```zig
+const z_plug = @import("z_plug");
+const dep = b.dependency("z_plug", .{ .target = target, .optimize = optimize });
+z_plug.addPlugin(b, dep, .{
+    .name = "MyPlugin",
+    .root_source_file = b.path("src/plugin.zig"),
+    .target = target,
+    .optimize = optimize,
+    .formats = .{ .clap = true, .vst3 = true },
+});
+```
+
+**Internal use (root `build.zig`):**
+```zig
+addPluginWithModule(b, mod, .{ ... });
+```
+
+The build system:
+- Compiles as shared library: `.clap` (single `.so`/`.dylib`/`.dll`), `.vst3` (bundle structure).
+- Handles platform-specific bundling: macOS `.vst3` bundle directory structure, Linux `.so` paths, Windows `.dll`.
+- Links KissFFT automatically (included in z_plug module).
+- Supports cross-compilation via Zig's built-in cross-compilation support.
 
 ## Testing
 
@@ -212,19 +245,30 @@ These docs provide practical guidance for contributors and plugin authors.
 
 ### Module-Level Documentation (per-module `README.md`)
 
-Each module under `src/` has a `README.md` colocated with the code:
-- **`src/core/README.md`** — Framework core module overview (purpose, files, key types, design notes)
-- **`src/bindings/clap/README.md`** — CLAP bindings module (origin, license, structure, key types)
-- **`src/bindings/vst3/README.md`** — VST3 bindings module (purpose, license, structure, key types)
+Each module under `lib/z_plug/` has a `README.md` colocated with the code:
+- **`lib/z_plug/core/README.md`** — Framework core module overview (purpose, files, key types, design notes)
+- **`lib/z_plug/dsp/README.md`** — DSP building blocks module overview
+- **`lib/z_plug/bindings/clap/README.md`** — CLAP bindings module (origin, license, structure, key types)
+- **`lib/z_plug/bindings/vst3/README.md`** — VST3 bindings module (purpose, license, structure, key types)
 
 Module READMEs are short (1–2 screenfulls), describing what the module does, its structure, and key types. They do not duplicate API docs — the code has `///` doc comments for that.
 
 ### Documentation Rules
 
 **Before working in a module:**
-1. Read the module's `README.md` (e.g., `src/core/README.md`)
+1. Read the module's `README.md` (e.g., `lib/z_plug/core/README.md`)
 2. Check related high-level docs in `docs/` (e.g., `docs/architecture.md`)
 3. Review this file (`AGENTS.md`) for coding standards
+
+**After making changes:**
+1. If the change affects the public API, types, or module structure, update the corresponding module `README.md`
+2. If the change affects high-level architecture, patterns, or workflow, update the relevant `docs/` file
+3. Always update `///` doc comments on modified public declarations
+
+**When creating a new module:**
+- Include a `README.md` describing the module's purpose, structure, and key types
+- Follow the patterns in existing module READMEs
+- Update `docs/architecture.md` if the new module affects the overall architecture
 
 **After making changes:**
 1. If the change affects the public API, types, or module structure, update the corresponding module `README.md`

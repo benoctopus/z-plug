@@ -126,6 +126,91 @@ comptime {
 
 These comptime blocks generate the necessary C ABI symbols (`clap_entry` and `GetPluginFactory`) that DAW hosts use to load your plugin.
 
+### Building Standalone Plugins
+
+To build your plugin as a standalone project (outside the z-plug repository), create a standard Zig project with z-plug as a dependency:
+
+**`build.zig.zon`:**
+```zig
+.{
+    .name = .my_plugin,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.15.2",
+    .dependencies = .{
+        .z_plug = .{
+            .url = "https://github.com/.../z-plug/archive/v0.1.0.tar.gz",
+            .hash = "...",  // Run `zig build` to compute hash
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
+```
+
+**`build.zig`:**
+```zig
+const std = @import("std");
+const z_plug = @import("z_plug");
+
+pub fn build(b: *std.Build) void {
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
+    const dep = b.dependency("z_plug", .{ .target = target, .optimize = optimize });
+
+    z_plug.addPlugin(b, dep, .{
+        .name = "MyPlugin",
+        .root_source_file = b.path("src/plugin.zig"),
+        .target = target,
+        .optimize = optimize,
+        .formats = .{ .clap = true, .vst3 = true },
+    });
+}
+```
+
+**`src/plugin.zig`:**
+```zig
+const z_plug = @import("z_plug");
+
+const MyPlugin = struct {
+    pub const name: [:0]const u8 = "My Plugin";
+    pub const vendor: [:0]const u8 = "My Company";
+    pub const url: [:0]const u8 = "https://example.com";
+    pub const version: [:0]const u8 = "0.1.0";
+    pub const plugin_id: [:0]const u8 = "com.mycompany.myplugin";
+    
+    pub const audio_io_layouts = &[_]z_plug.AudioIOLayout{
+        z_plug.AudioIOLayout.STEREO,
+    };
+    
+    pub const params = &[_]z_plug.Param{ /* ... */ };
+    
+    pub fn init(/* ... */) bool { /* ... */ }
+    pub fn deinit(/* ... */) void { /* ... */ }
+    pub fn process(/* ... */) z_plug.ProcessStatus { /* ... */ }
+};
+
+comptime {
+    _ = z_plug.ClapEntry(MyPlugin);
+    _ = z_plug.Vst3Factory(MyPlugin);
+}
+```
+
+Build your plugin:
+```bash
+zig build  # Outputs to zig-out/plugins/MyPlugin.{clap,vst3}
+```
+
+The `addPlugin` helper:
+- Automatically links the z_plug framework and all dependencies (including KissFFT)
+- Generates both CLAP and VST3 binaries from a single source file
+- Handles platform-specific bundling (macOS `.vst3` bundles, etc.)
+- Supports cross-compilation via Zig's built-in toolchain
+
+See the `examples/` directory for complete working examples of standalone plugin projects.
+
 ## Declaring Parameters
 
 Parameters are declared as a comptime array of `Param` values:
@@ -468,7 +553,7 @@ const vec_len = z_plug.SIMD_VEC_LEN;
 const F32xV = z_plug.F32xV;
 ```
 
-See `examples/super_gain.zig` for a complete example using SIMD, denormal flushing, and block-based processing.
+See `examples/super_gain/src/plugin.zig` for a complete example using SIMD, denormal flushing, and block-based processing.
 
 ## Real-Time Safety Rules
 
@@ -496,7 +581,7 @@ For background work (sample loading, GUI updates), use a separate thread and com
 
 ## Complete Example: Gain Plugin
 
-This is the complete, working gain plugin from `examples/gain.zig` that loads and runs in DAWs:
+This is the complete, working gain plugin from `examples/gain/src/plugin.zig` that loads and runs in DAWs:
 
 ```zig
 /// Simple gain plugin example for z-plug.
@@ -505,7 +590,7 @@ This is the complete, working gain plugin from `examples/gain.zig` that loads an
 /// stereo processing, and both CLAP and VST3 support.
 ///
 /// For a more complete example with stereo width, SIMD, channel routing,
-/// and denormal flushing, see examples/super_gain.zig.
+/// and denormal flushing, see examples/super_gain/src/plugin.zig.
 const z_plug = @import("z_plug");
 
 const GainPlugin = struct {

@@ -52,9 +52,9 @@ zig build test --summary all
 ```
 
 Tests include:
-- Framework core modules (`src/core/`)
-- CLAP bindings (`src/bindings/clap/`)
-- VST3 bindings (`src/bindings/vst3/`)
+- Framework core modules (`lib/z_plug/core/`)
+- CLAP bindings (`lib/z_plug/bindings/clap/`)
+- VST3 bindings (`lib/z_plug/bindings/vst3/`)
 - Wrapper implementations
 
 ### Build plugins
@@ -102,52 +102,66 @@ z-plug/
 │   ├── getting-started.md         # This file
 │   └── plugin-authors.md          # Plugin authoring guide
 │
-├── src/
-│   ├── root.zig                   # Public API re-exports
-│   │
-│   ├── core/                      # Framework core (API-agnostic)
-│   │   ├── README.md              # Core module documentation
-│   │   ├── plugin.zig             # Plugin interface & validation
-│   │   ├── params.zig             # Parameter system with smoothing
-│   │   ├── buffer.zig             # Audio buffer abstraction
-│   │   ├── events.zig             # Note/MIDI events
-│   │   ├── state.zig              # State persistence
-│   │   ├── audio_layout.zig       # Audio I/O configuration
-│   │   ├── platform.zig           # Platform constants (cache line, SIMD vector size)
-│   │   └── util.zig               # Audio utilities (dB, MIDI, time, denormals)
-│   │
-│   ├── bindings/
-│   │   ├── clap/                  # CLAP C API bindings (LGPL v3)
-│   │   │   ├── README.md          # CLAP bindings docs
-│   │   │   ├── main.zig           # CLAP bindings root
-│   │   │   └── ... (40+ files)
-│   │   │
-│   │   └── vst3/                  # VST3 C API bindings (MIT)
-│   │       ├── README.md          # VST3 bindings docs
-│   │       ├── root.zig           # VST3 bindings root
-│   │       └── ... (~14 files)
-│   │
-│   └── wrappers/                  # Format-specific wrappers
-│       ├── common.zig             # Shared wrapper utilities
-│       ├── clap/                  # CLAP wrapper implementation
-│       │   ├── README.md          # CLAP wrapper docs
-│       │   ├── entry.zig          # clap_entry export
-│       │   ├── factory.zig        # Plugin factory
-│       │   ├── plugin.zig         # Plugin wrapper
-│       │   └── extensions.zig     # CLAP extensions
+├── lib/
+│   └── z_plug/                    # Framework library
+│       ├── root.zig               # Public API re-exports
 │       │
-│       └── vst3/                  # VST3 wrapper implementation
-│           ├── README.md          # VST3 wrapper docs
-│           ├── factory.zig        # GetPluginFactory export
-│           ├── component.zig      # IComponent + IAudioProcessor
-│           ├── controller.zig     # IEditController
-│           └── com.zig            # COM helpers
+│       ├── core/                  # Framework core (API-agnostic)
+│       │   ├── README.md          # Core module documentation
+│       │   ├── plugin.zig         # Plugin interface & validation
+│       │   ├── params.zig         # Parameter system with smoothing
+│       │   ├── buffer.zig         # Audio buffer abstraction
+│       │   ├── events.zig         # Note/MIDI events
+│       │   ├── state.zig          # State persistence
+│       │   ├── audio_layout.zig   # Audio I/O configuration
+│       │   └── platform.zig       # Platform constants (cache line, SIMD vector size)
+│       │
+│       ├── dsp/                   # DSP building blocks
+│       │   ├── README.md          # DSP module documentation
+│       │   ├── util/              # Conversion utilities, denormals
+│       │   ├── metering/          # Peak, RMS, true-peak, LUFS meters
+│       │   └── stft/              # STFT spectral processing
+│       │
+│       ├── bindings/
+│       │   ├── clap/              # CLAP C API bindings (LGPL v3)
+│       │   │   ├── README.md      # CLAP bindings docs
+│       │   │   ├── main.zig       # CLAP bindings root
+│       │   │   └── ... (40+ files)
+│       │   │
+│       │   └── vst3/              # VST3 C API bindings (MIT)
+│       │       ├── README.md      # VST3 bindings docs
+│       │       ├── root.zig       # VST3 bindings root
+│       │       └── ... (~14 files)
+│       │
+│       └── wrappers/              # Format-specific wrappers
+│           ├── common.zig         # Shared wrapper utilities
+│           ├── clap/              # CLAP wrapper implementation
+│           │   ├── README.md      # CLAP wrapper docs
+│           │   ├── entry.zig      # clap_entry export
+│           │   ├── factory.zig    # Plugin factory
+│           │   ├── plugin.zig     # Plugin wrapper
+│           │   └── extensions.zig # CLAP extensions
+│           │
+│           └── vst3/              # VST3 wrapper implementation
+│               ├── README.md      # VST3 wrapper docs
+│               ├── factory.zig    # GetPluginFactory export
+│               ├── component.zig  # IComponent + IAudioProcessor
+│               ├── controller.zig # IEditController
+│               └── com.zig        # COM helpers
 │
-├── examples/                      # Example plugins
-│   ├── gain.zig                   # Minimal gain plugin (CLAP + VST3)
-│   └── super_gain.zig            # Feature showcase (SIMD, stereo width, etc.)
+├── vendor/
+│   └── kissfft/                   # KissFFT C library (BSD-3-Clause)
 │
-├── build.zig                      # Build system with addPlugin() helper
+├── examples/                      # Standalone example plugin projects
+│   ├── gain/
+│   │   ├── build.zig              # Uses z_plug.addPlugin()
+│   │   ├── build.zig.zon          # Path dependency on ../..
+│   │   └── src/plugin.zig         # Plugin implementation
+│   ├── super_gain/                # (same structure)
+│   ├── poly_synth/                # (same structure)
+│   └── spectral/                  # (same structure)
+│
+├── build.zig                      # Root build: module setup + public addPlugin helpers
 ├── build.zig.zon                  # Package manifest
 ├── build_tools/
 │   └── install_plugins.zig        # Install/sign/uninstall tool
@@ -163,7 +177,7 @@ z-plug/
 - **[docs/architecture.md](architecture.md)** — How the layers fit together
 - **[docs/plugin-authors.md](plugin-authors.md)** — Writing plugins with zig-plug
 - **[AGENTS.md](../AGENTS.md)** — Coding standards and architecture rules
-- **Module READMEs** — See `src/*/README.md` for module-specific docs
+- **Module READMEs** — See `lib/z_plug/*/README.md` for module-specific docs
 
 ### External References
 
@@ -177,7 +191,7 @@ z-plug/
 
 ### Before starting work on a module
 
-1. Read the module's `README.md` (e.g., `src/core/README.md`)
+1. Read the module's `README.md` (e.g., `lib/z_plug/core/README.md`)
 2. Check related docs in `docs/` (e.g., `docs/architecture.md`)
 3. Review [AGENTS.md](../AGENTS.md) for coding standards
 
@@ -190,7 +204,7 @@ z-plug/
 
 ### Creating a new module
 
-When adding a new directory under `src/` (e.g., `src/wrappers/clap/`):
+When adding a new directory under `lib/z_plug/` (e.g., `lib/z_plug/wrappers/clap/`):
 1. Create a `README.md` describing the module's purpose, structure, and key types
 2. Follow the patterns in existing modules
 

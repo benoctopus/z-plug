@@ -1,0 +1,14 @@
+.{
+    .name = .zig_poly_synth,
+    .version = "0.1.0",
+    .fingerprint = 0x43c0fbb2851ce547,
+    .minimum_zig_version = "0.15.2",
+    .dependencies = .{
+        .z_plug = .{ .path = "../.." },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

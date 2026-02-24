@@ -30,7 +30,7 @@ zig-plug follows a layered architecture inspired by [nih-plug](https://github.co
 - Never imports or references CLAP or VST3 types directly
 - Uses only framework core types from `@import("z_plug")`
 
-**2. Framework Core** (`src/core/`) + **DSP Building Blocks** (`src/dsp/`)
+**2. Framework Core** (`lib/z_plug/core/`) + **DSP Building Blocks** (`lib/z_plug/dsp/`)
 - **Core**: API-agnostic abstractions: `Plugin(T)`, `Buffer`, `NoteEvent`, `Param`, etc.
   - Comptime validation of plugin structs
   - Zero-copy buffer wrappers, lock-free parameter storage
@@ -42,14 +42,14 @@ zig-plug follows a layered architecture inspired by [nih-plug](https://github.co
   - `stft`: Comptime-parameterized STFT processor for spectral effects (uses KissFFT)
   - Dependency direction: `dsp/ --> core/platform.zig` (one-way, no circular deps)
 
-**3. Format Wrappers** (`src/wrappers/clap/`, `src/wrappers/vst3/`, `src/wrappers/common.zig`)
+**3. Format Wrappers** (`lib/z_plug/wrappers/clap/`, `lib/z_plug/wrappers/vst3/`, `lib/z_plug/wrappers/common.zig`)
 - Translate between framework core and format-specific ABIs
 - CLAP wrapper: implements `clap_plugin` with function pointers
 - VST3 wrapper: implements COM interfaces (`IComponent`, `IAudioProcessor`, `IEditController`)
 - Shared utilities (`common.zig`): in-place buffer copy, ProcessContext construction, parameter normalization helpers
 - Handles format-specific lifecycle, parameter sync, event translation
 
-**4. Low-Level Bindings** (`src/bindings/clap/`, `src/bindings/vst3/`)
+**4. Low-Level Bindings** (`lib/z_plug/bindings/clap/`, `lib/z_plug/bindings/vst3/`)
 - Thin, idiomatic Zig translations of C APIs
 - CLAP: `extern struct` definitions matching the CLAP 1.2.2 spec
 - VST3: hand-written bindings for the VST3 C API
@@ -160,20 +160,20 @@ The plugin sees a simple `[]const NoteEvent` slice, agnostic of the underlying f
 
 ## Module Relationships
 
-- `src/root.zig` re-exports types from `src/core/` and `src/dsp/` for plugin authors
-- `src/dsp/` modules import `src/core/platform.zig` for SIMD constants (one-way dependency)
-- `src/core/` modules import each other (e.g., `plugin.zig` imports `buffer.zig`, `events.zig`, `params.zig`)
-- `src/wrappers/common.zig` provides shared utilities used by both CLAP and VST3 wrappers
-- `src/wrappers/` imports both `src/core/`, `src/wrappers/common.zig`, and `src/bindings/`
-- `src/bindings/` are standalone (only import `std`)
+- `lib/z_plug/root.zig` re-exports types from `lib/z_plug/core/` and `lib/z_plug/dsp/` for plugin authors
+- `lib/z_plug/dsp/` modules import `lib/z_plug/core/platform.zig` for SIMD constants (one-way dependency)
+- `lib/z_plug/core/` modules import each other (e.g., `plugin.zig` imports `buffer.zig`, `events.zig`, `params.zig`)
+- `lib/z_plug/wrappers/common.zig` provides shared utilities used by both CLAP and VST3 wrappers
+- `lib/z_plug/wrappers/` imports both `lib/z_plug/core/`, `lib/z_plug/wrappers/common.zig`, and `lib/z_plug/bindings/`
+- `lib/z_plug/bindings/` are standalone (only import `std`)
 
 See each module's `README.md` for detailed structure:
-- [src/core/README.md](../src/core/README.md)
-- [src/dsp/README.md](../src/dsp/README.md)
-- [src/wrappers/clap/README.md](../src/wrappers/clap/README.md)
-- [src/wrappers/vst3/README.md](../src/wrappers/vst3/README.md)
-- [src/bindings/clap/README.md](../src/bindings/clap/README.md)
-- [src/bindings/vst3/README.md](../src/bindings/vst3/README.md)
+- [lib/z_plug/core/README.md](../lib/z_plug/core/README.md)
+- [lib/z_plug/dsp/README.md](../lib/z_plug/dsp/README.md)
+- [lib/z_plug/wrappers/clap/README.md](../lib/z_plug/wrappers/clap/README.md)
+- [lib/z_plug/wrappers/vst3/README.md](../lib/z_plug/wrappers/vst3/README.md)
+- [lib/z_plug/bindings/clap/README.md](../lib/z_plug/bindings/clap/README.md)
+- [lib/z_plug/bindings/vst3/README.md](../lib/z_plug/bindings/vst3/README.md)
 
 ## Real-Time Safety
 
