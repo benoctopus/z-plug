@@ -1,11 +1,14 @@
 //! Waveform display using GPUI's `canvas()` element.
 //!
 //! Renders a pre-computed peak overview of the loaded audio file, with a
-//! playhead line indicating the current playback position.
+//! playhead line indicating the current playback position. Clicking or
+//! dragging on the waveform emits a [`WaveformEvent::Seek`] event with the
+//! target sample position.
 
 use gpui::{
     canvas, div, prelude::*, px, rgb, Background, BorderStyle, Bounds, Corners, Edges, Hsla,
-    IntoElement, PaintQuad, Pixels, Point, Size, Window,
+    IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels,
+    Point, Size, Window,
 };
 
 // ---------------------------------------------------------------------------
@@ -78,6 +81,16 @@ impl WaveformPeaks {
 }
 
 // ---------------------------------------------------------------------------
+// WaveformEvent
+// ---------------------------------------------------------------------------
+
+/// Events emitted by [`WaveformView`].
+pub enum WaveformEvent {
+    /// The user scrubbed to a new position; value is the target sample index.
+    Seek(u64),
+}
+
+// ---------------------------------------------------------------------------
 // WaveformView
 // ---------------------------------------------------------------------------
 
@@ -86,18 +99,41 @@ pub struct WaveformView {
     pub peaks: WaveformPeaks,
     /// Current playback position in samples (updated by the app timer).
     pub position: u64,
+    /// True while the left mouse button is held down on the waveform.
+    pub dragging: bool,
+    /// Last-known canvas bounds, used to convert mouse X to a sample position.
+    bounds: Bounds<Pixels>,
 }
+
+impl gpui::EventEmitter<WaveformEvent> for WaveformView {}
 
 impl WaveformView {
     pub fn new(peaks: WaveformPeaks) -> Self {
-        Self { peaks, position: 0 }
+        Self {
+            peaks,
+            position: 0,
+            dragging: false,
+            bounds: Bounds::default(),
+        }
+    }
+
+    /// Convert a window-space mouse position to a sample index.
+    fn sample_from_mouse(&self, mouse_position: Point<Pixels>) -> u64 {
+        let x = f32::from(mouse_position.x) - f32::from(self.bounds.origin.x);
+        let width = f32::from(self.bounds.size.width);
+        if width <= 0.0 || self.peaks.total_samples == 0 {
+            return 0;
+        }
+        let progress = (x / width).clamp(0.0, 1.0);
+        (progress as f64 * self.peaks.total_samples as f64) as u64
     }
 }
 
 impl Render for WaveformView {
-    fn render(&mut self, _window: &mut Window, _cx: &mut gpui::Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut gpui::Context<Self>) -> impl IntoElement {
         let peaks = self.peaks.clone();
         let position = self.position;
+        let weak = cx.weak_entity();
 
         div()
             .w_full()
@@ -105,9 +141,34 @@ impl Render for WaveformView {
             .bg(rgb(0x1a1a2e))
             .rounded(px(6.0))
             .overflow_hidden()
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, event: &MouseDownEvent, _window, cx| {
+                    this.dragging = true;
+                    this.position = this.sample_from_mouse(event.position);
+                    cx.emit(WaveformEvent::Seek(this.position));
+                    cx.notify();
+                }),
+            )
+            .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _window, cx| {
+                if event.dragging() {
+                    this.position = this.sample_from_mouse(event.position);
+                    cx.emit(WaveformEvent::Seek(this.position));
+                    cx.notify();
+                }
+            }))
+            .capture_any_mouse_up(cx.listener(|this, _event: &MouseUpEvent, _window, _cx| {
+                this.dragging = false;
+            }))
             .child(
                 canvas(
-                    move |_bounds, _window, _cx| {},
+                    move |bounds, _window, cx| {
+                        if let Some(entity) = weak.upgrade() {
+                            entity.update(cx, |view, _cx| {
+                                view.bounds = bounds;
+                            });
+                        }
+                    },
                     move |bounds, _prepaint, window, _cx| {
                         draw_waveform(window, bounds, &peaks, position);
                     },

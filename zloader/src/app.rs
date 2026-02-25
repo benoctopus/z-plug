@@ -12,7 +12,7 @@ use gpui_component::slider::SliderEvent;
 use crate::engine::AudioEngine;
 use crate::host::{ParamInfo, PluginHost, PluginInfo};
 use crate::params::ParamsView;
-use crate::waveform::{WaveformPeaks, WaveformView};
+use crate::waveform::{WaveformEvent, WaveformPeaks, WaveformView};
 
 // ---------------------------------------------------------------------------
 // AppState — owns the non-Send FFI resources
@@ -52,6 +52,21 @@ impl ZLoaderApp {
 
         // Build the waveform view.
         let waveform = cx.new(|_cx| WaveformView::new(peaks));
+
+        // Subscribe to seek events from the waveform and forward to the engine.
+        let state_for_seek = state.downgrade();
+        cx.subscribe(
+            &waveform,
+            move |_this, _waveform, event: &WaveformEvent, cx| {
+                let WaveformEvent::Seek(position) = event;
+                if let Some(state_entity) = state_for_seek.upgrade() {
+                    state_entity.update(cx, |s, _cx| {
+                        s.engine.seek(*position);
+                    });
+                }
+            },
+        )
+        .detach();
 
         // Build the params view.
         let params_view = cx.new(|cx| ParamsView::new(&params, cx));
@@ -108,10 +123,12 @@ impl ZLoaderApp {
                         (s.engine.position(), s.engine.is_playing())
                     });
 
-                    // Update waveform playhead.
+                    // Update waveform playhead (skip while user is scrubbing).
                     waveform_entity.update(cx, |w, cx| {
-                        w.position = position;
-                        cx.notify();
+                        if !w.dragging {
+                            w.position = position;
+                            cx.notify();
+                        }
                     });
 
                     // Update root view playing state.
